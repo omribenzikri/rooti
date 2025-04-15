@@ -1,0 +1,1 @@
+Fun Linux LKM rootkit I made for learning more about how the kernel works.
