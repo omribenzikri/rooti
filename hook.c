@@ -1,22 +1,31 @@
 #include <linux/ftrace.h>
 #include <linux/kprobes.h>
 
-unsigned long (*__kallsyms_lookup_name)(const char *name) = NULL;
-
-// TODO: document recursion mechanisms and rooti_ftrace_hook struct
+/* Recursion loops protection mechanism - often times hook functions from this module
+ * will call the original syscall handler. The call to the original kernel function would trigger
+ * ftrace callback, which would in turn point to the hook function, which would call the original handler
+ * and so on and so forth. We've got two ways to handle this:
+ * 1. Skip the call to ftrace by setting the original syscall handler pointer (e.g rooti_ftrace_hook.orig) to the memory
+ *    address of the instruction after the instruction to call ftrace. Used by setting ROOTI_USE_FENTRY_OFFSET
+ * 2. Check the return address of the traced function to ensure that the callback will point to the hook function
+ *    only if the original syscall handler was NOT called by the hook function itself.
+ *    Used by clearing ROOTI_USE_FENTRY_OFFSET
+ */
 
 #define ROOTI_USE_FENTRY_OFFSET 0
 #if !ROOTI_USE_FENTRY_OFFSET
 #pragma GCC optimize("-fno-optimize-sibling-calls")
 #endif
 
+unsigned long (*__kallsyms_lookup_name)(const char *name) = NULL;
+
 // Represents a syscall hook based on the ftrace framework.
 struct rooti_ftrace_hook {
     const char *name;      // hooked syscall name
     void *func;            // pointer to hook function
-    void *orig;            
+    void *orig;            // pointer to the original function
 
-    unsigned long addr;
+    unsigned long addr;    // memory address of the original function
     struct ftrace_ops ops; // ftrace options
 };
 
@@ -26,6 +35,7 @@ int rooti_install_hook(struct rooti_ftrace_hook *hook);
 int rooti_install_hooks(struct rooti_ftrace_hook *hooks, size_t count);
 void rooti_uninstall_hook(struct rooti_ftrace_hook *hook);
 void rooti_uninstall_hooks(struct rooti_ftrace_hook *hooks, size_t count);
+
 
 // On 64 bit systems, the syscall handler symbols are prefixed with '__x64_'.
 #ifdef CONFIG_X86_64
@@ -80,7 +90,7 @@ static unsigned long rooti_resolve_syscall_handler_addr(struct rooti_ftrace_hook
     }
 
 #if ROOTI_USE_FENTRY_OFFSET
-    // Skip over the ftrace call - recursion protection mechanism
+    // Skip over the ftrace call when called from this module - recursion protection mechanism
     *((unsigned long *)hook->orig) = hook->addr + MCOUNT_INSN_SIZE;
 #else
     *((unsigned long *)hook->orig) = hook->addr;
@@ -101,6 +111,8 @@ static void notrace rooti_ftrace_thunk(unsigned long ip, unsigned long parent_ip
 #if ROOTI_USE_FENTRY_OFFSET
     regs->iregs.ip = (unsigned long)hook->func;
 #else
+    // Only point to the hook function if called from outside and not from the hook function, which is local to
+    // this module - recursion protection mechanism
     if(!within_module(parent_ip, THIS_MODULE)) {
         regs->regs.ip = (unsigned long)hook->func;
     }
