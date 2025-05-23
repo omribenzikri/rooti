@@ -11,13 +11,6 @@
 
 #define ROOTI_HOOKING_METHOD ROOTI_METHOD_FTRACE
 
-/* Public functions prototypes */
-int rooti_hooking_init(void);
-int rooti_install_hook(struct rooti_syscall_hook *hook);
-int rooti_install_hooks(struct rooti_syscall_hook *hooks, size_t count);
-void rooti_uninstall_hook(struct rooti_syscall_hook *hook);
-void rooti_uninstall_hooks(struct rooti_syscall_hook *hooks, size_t count);
-
 unsigned long (*__kallsyms_lookup_name)(const char *name) = NULL;
 
 /*
@@ -37,6 +30,13 @@ struct rooti_syscall_hook {
     struct ftrace_ops ops; // ftrace configuration
 #endif
 };
+
+/* Public functions prototypes */
+int rooti_hooking_init(void);
+int rooti_install_hook(struct rooti_syscall_hook *hook);
+int rooti_install_hooks(struct rooti_syscall_hook *hooks, size_t count);
+void rooti_uninstall_hook(struct rooti_syscall_hook *hook);
+void rooti_uninstall_hooks(struct rooti_syscall_hook *hooks, size_t count);
 
 /* On 64 bit systems, the syscall handler symbols are prefixed with '__x64_'. */
 #ifdef CONFIG_X86_64
