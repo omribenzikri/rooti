@@ -19,7 +19,7 @@ static int elevate_privilege(void)
     // Prepare new set of credentials
     struct cred *creds = prepare_creds();
     if (creds == NULL) {
-        printk(KERN_DEBUG "rooti: prepare_creds() failed.\n");
+        printk(KERN_DEBUG "rooti: prepare_creds() failed, out of memory\n");
         return -ENOMEM;
     }
 
