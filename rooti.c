@@ -23,7 +23,7 @@ MODULE_VERSION("1.0.0");
 struct rooti_tamper_fd {
     int fd;                 // file descriptor number
     pid_t pid;              // PID of the owner
-    struct list_head head;  // Linked list head
+    struct list_head head;  // linked list head
 };
 
 static LIST_HEAD(rooti_random_tamper_fds);
