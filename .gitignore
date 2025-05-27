@@ -1,6 +1,6 @@
 .vscode/
 bin/
-*.o
+*.o*
 *.ko
 *.mod*
 *.cmd
