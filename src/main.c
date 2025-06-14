@@ -9,7 +9,7 @@
 #include <linux/seq_file.h>
 #include <net/sock.h>
 #include <net/tcp.h>
-#include "hooking.c"
+#include "hooking.h"
 #include "utmp.h"
 
 MODULE_LICENSE("GPL");
