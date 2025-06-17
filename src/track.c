@@ -26,3 +26,14 @@ void rooti_untrack_fd(struct rooti_tracked_fd *tracked_fd)
     list_del(&tracked_fd->head);
     kfree(tracked_fd);
 }
+
+bool rooti_is_tracked_fd(int fd, struct list_head *list)
+{
+    struct rooti_tracked_fd *record;
+    list_for_each_entry(record, list, head) {
+        if (current->pid == record->pid && fd == record->fd) {
+            return true;
+        }
+    }
+    return false;
+}
