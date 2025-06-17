@@ -1,5 +1,5 @@
 #include <linux/cred.h>
-#include "pe.h"
+#include "privilege.h"
 
 /*
     Escalates the privilege of the current process in execution to root user & group.
