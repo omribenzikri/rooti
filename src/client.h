@@ -1,3 +1,6 @@
+#ifndef _ROOTI_CLIENT_H
+#define _ROOTI_CLIENT_H
+
 #include "linux/types.h"
 
 /*
@@ -10,3 +13,5 @@ struct rooti_client {
 };
 
 int rooti_register_client(struct rooti_client *client);
+
+#endif
