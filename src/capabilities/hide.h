@@ -1,8 +1,6 @@
 #ifndef _ROOTI_HIDE_H
 #define _ROOTI_HIDE_H
 
-#include "client.h"
-
 extern bool rooti_hidden;
 
 void rooti_hideme(void);
