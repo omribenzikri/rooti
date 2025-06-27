@@ -1,2 +1,4 @@
 obj-m := rooti.o
-rooti-objs := main.o hooking.o client.o privilege.o track.o rig.o hide.o  # TODO: wildcard this
+
+# TODO: wildcard this
+rooti-objs := main.o client.o hooking/hooking.o capabilities/privilege.o capabilities/track.o capabilities/rig.o capabilities/hide.o

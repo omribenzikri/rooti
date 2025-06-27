@@ -5,10 +5,10 @@ SOURCE_DIR := src
 BUILD_DIR := bin
 BUILD_DIR_KBUILD := $(BUILD_DIR)/Kbuild
 
-SOURCES := $(wildcard $(SOURCE_DIR)/*.c)
+SOURCES := $(wildcard $(SOURCE_DIR)/*.c) $(wildcard $(SOURCE_DIR)/hooking/*.c) $(wildcard $(SOURCE_DIR)/capabilities/*.c)
 SOURCES_SYMLINKS = $(subst $(SOURCE_DIR), $(BUILD_DIR), $(SOURCES))
 
-HEADERS := $(wildcard $(SOURCE_DIR)/*.h)
+HEADERS := $(wildcard $(SOURCE_DIR)/*.h) $(wildcard $(SOURCE_DIR)/hooking/*.h) $(wildcard $(SOURCE_DIR)/capabilities/*.h)
 HEADERS_SYMLINKS = $(subst $(SOURCE_DIR), $(BUILD_DIR), $(HEADERS))
 
 all: $(SOURCES_SYMLINKS) $(HEADERS_SYMLINKS) $(BUILD_DIR_KBUILD)
@@ -16,13 +16,14 @@ all: $(SOURCES_SYMLINKS) $(HEADERS_SYMLINKS) $(BUILD_DIR_KBUILD)
 	@rm -f $(SOURCES_SYMLINKS) $(HEADERS_SYMLINKS) $(BUILD_DIR_KBUILD)
 
 $(BUILD_DIR)/%: $(SOURCE_DIR)/% $(BUILD_DIR)
-	@ln -sf ../$< $@
+	@ln -sf $(PWD)/$< $@
 
 $(BUILD_DIR_KBUILD): $(BUILD_DIR)
 	cp Kbuild $(BUILD_DIR)
 
 $(BUILD_DIR):
-	mkdir -p bin
+	mkdir -p bin/hooking
+	mkdir -p bin/capabilities
 
 clean:
 	rm -rf $(BUILD_DIR)
