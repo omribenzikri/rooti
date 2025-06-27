@@ -8,11 +8,11 @@
 #include <linux/seq_file.h>
 #include <net/sock.h>
 #include <net/tcp.h>
+#include "hooking/hooking.h"
+#include "capabilities/track.h"
+#include "capabilities/rig.h"
+#include "capabilities/hide.h"
 #include "client.h"
-#include "track.h"
-#include "rig.h"
-#include "hide.h"
-#include "hooking.h"
 #include "config.h"
 
 MODULE_LICENSE("GPL");
