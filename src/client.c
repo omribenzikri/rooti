@@ -1,6 +1,6 @@
 #include <linux/module.h>
 #include <linux/string.h>
-#include "privilege.h"
+#include "capabilities/privilege.h"
 #include "client.h"
 
 /*

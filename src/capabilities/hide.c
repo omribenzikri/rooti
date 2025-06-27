@@ -3,8 +3,7 @@
 #include <linux/dirent.h>
 #include "utmp.h"
 #include "hide.h"
-#include "client.h"
-#include "config.h"
+#include "../config.h"
 
 /* 
  * Indicates whether the rootkit is missing from the list of kernel modules (e.g is hidden).
