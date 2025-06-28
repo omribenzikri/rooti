@@ -1,4 +1,6 @@
 obj-m := rooti.o
 
 # TODO: wildcard this
-rooti-objs := main.o client.o hooking/hooking.o capabilities/privilege.o capabilities/track.o capabilities/rig.o capabilities/hide.o
+rooti-objs := main.o client.o 
+rooti-objs += hooking/init.o hooking/utils.o hooking/syscall.o hooking/func.o
+rooti-objs += capabilities/privilege.o capabilities/track.o capabilities/rig.o capabilities/hide.o
