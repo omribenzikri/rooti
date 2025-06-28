@@ -2,7 +2,7 @@
 #define _ROOTI_HOOKING_UTILS_H
 
 /*
-    Reference to the kallsyms_lookup_name() kernel function. 
+    Reference to the kallsyms_lookup_name() kernel function which is no longer exported. 
     The address of this pointer is resolved by the initialization function in utils.c
 */
 extern unsigned long (*__kallsyms_lookup_name)(const char *name);

@@ -2,6 +2,7 @@
 #include <linux/types.h>
 #include "track.h"
 
+// Append a new tracked file descriptor record into the supplied list
 int rooti_track_fd(int fd, struct list_head *list)
 {
     // Allocate a new record of an open fd
@@ -20,6 +21,7 @@ int rooti_track_fd(int fd, struct list_head *list)
     return 0;
 }
 
+// Removes the given tracked file descriptor from its list
 void rooti_untrack_fd(struct rooti_tracked_fd *tracked_fd)
 {
     // Remove the record from the list and release the memory
@@ -27,6 +29,10 @@ void rooti_untrack_fd(struct rooti_tracked_fd *tracked_fd)
     kfree(tracked_fd);
 }
 
+/*
+    Determines whether the given file descriptor is tracked in the given list, with respect
+    to the PID of the current process in execution.
+*/
 bool rooti_is_tracked_fd(int fd, struct list_head *list)
 {
     struct rooti_tracked_fd *record;
