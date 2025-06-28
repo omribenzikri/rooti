@@ -14,7 +14,7 @@
  *    only if the original function was NOT called by the hook function itself.
  *    Used by clearing ROOTI_USE_FENTRY_OFFSET
  */
-#define ROOTI_USE_FENTRY_OFFSET 1
+#define ROOTI_USE_FENTRY_OFFSET 0
 #if !ROOTI_USE_FENTRY_OFFSET
 #pragma GCC optimize("-fno-optimize-sibling-calls")
 #endif
@@ -29,11 +29,11 @@
 
 // Represents a function hook achieved by abusing the ftrace framework.
 struct rooti_func_hook {
-    char *name;            // hooked function name
-    void *func;            // pointer to hook function
-    void *orig;            // pointer to the original function
-    unsigned long addr;    // real memory address of the original function
-    struct ftrace_ops ops; // ftrace configuration
+    char *name;               // hooked function name
+    void *func;               // pointer to hook function
+    void *orig;               // pointer to the original function
+    unsigned long addr;       // real memory address of the original function
+    struct ftrace_ops ops;    // ftrace configuration
 };
 
 int rooti_install_func_hook(struct rooti_func_hook *hook);

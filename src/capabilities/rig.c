@@ -1,6 +1,10 @@
 #include <linux/module.h>
 #include "rig.h"
 
+/*
+    Rigs a cryptographically secure random buffer (supplied by /dev/random or /dev/urandom) by
+    filling it with zeroes. The rigged buffer is copied into user space.
+*/
 int rooti_rig_random_buf(char *user_buf, size_t count)
 {
     // Allocate kernel buffer filled with zeros
