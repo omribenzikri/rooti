@@ -29,7 +29,7 @@ struct rooti_file_ops_hook {
     char *symbol;             // name of the file_operations object symbol
     void *func;               // pointer to hook function
     void *orig;               // pointer to the original function
-    enum rooti_file_ops ops;   // the desired operation to hook
+    enum rooti_file_ops ops;  // the desired operation to hook
 };
 
 // Represents a hook to a seqfile operation
