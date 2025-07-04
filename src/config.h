@@ -7,3 +7,6 @@
 
 // Port number to hide from tools like netstat
 #define ROOTI_HIDE_PORT 8080
+
+// Indicates whether this rootkit should be hidden by default
+// #define ROOTI_HIDEME_DEFAULT

