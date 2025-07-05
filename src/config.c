@@ -6,3 +6,9 @@ const char *ROOTI_HIDDEN_FILES[] = {
     "dontshowme.txt"
 };
 const size_t ROOTI_HIDDEN_FILES_COUNT = sizeof(ROOTI_HIDDEN_FILES) / sizeof(ROOTI_HIDDEN_FILES[0]);
+
+const char *ROOTI_HIDDEN_FILES_PREFIXES[] = {
+    "secret",
+    "classified"
+};
+const size_t ROOTI_HIDDEN_FILES_PREFIXES_COUNT = sizeof(ROOTI_HIDDEN_FILES_PREFIXES) / sizeof(ROOTI_HIDDEN_FILES_PREFIXES[0]);
