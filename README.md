@@ -1,3 +1,9 @@
+<p align="center">
+    <img src="rooti-logo.png" alt="Rooti Logo" width="350" style="margin: auto">
+</p>
+
+## Rooti
+
 Fun Linux LKM rootkit I made for learning more about how the kernel works.
 
 The project is still in a pretty rough shape, but these are the currently supported features:
