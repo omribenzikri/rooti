@@ -15,7 +15,7 @@ The project is still in a pretty rough shape, but these are the currently suppor
 * Hiding the rootkit itself
 * Rigging system PRNG utils (/dev/random & /dev/urandom)
 
-The rootkit sports supports a few types of kernel hooks:
+The rootkit supports a few types of kernel hooks:
 * Syscall hooking via syscall table hijacking
 * Function hooking via ftrace abuse
 * Hooking of function pointers in `struct file_operations` and `struct seq_operations`
