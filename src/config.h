@@ -1,6 +1,12 @@
 #ifndef _ROOTI_CONFIG_H
 #define _ROOTI_CONFIG_H
 
+#include <linux/types.h> 
+
+// Names of files that should be hidden
+extern const char *ROOTI_HIDDEN_FILES[];
+extern const size_t ROOTI_HIDDEN_FILES_COUNT;
+
 // Prefix of files that we wish to hide
 #define ROOTI_HIDE_PREFIX "secret"
 #define ROOTI_HIDE_PREFIX_LEN sizeof(ROOTI_HIDE_PREFIX) - 1
