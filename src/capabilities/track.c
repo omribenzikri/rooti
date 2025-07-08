@@ -1,6 +1,7 @@
 #include <linux/module.h>
 #include <linux/types.h>
 #include "track.h"
+#include "../utils.h"
 
 // Append a new tracked file descriptor record into the supplied list
 int rooti_track_fd(int fd, struct list_head *list)
@@ -8,7 +9,7 @@ int rooti_track_fd(int fd, struct list_head *list)
     // Allocate a new record of an open fd
     struct rooti_tracked_fd *tracked_fd = kmalloc(sizeof(*tracked_fd), GFP_KERNEL);
     if (tracked_fd == NULL) {
-        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        ROOTI_DEBUG("failed to allocate memory");
         return -ENOMEM;
     }
     tracked_fd->pid = current->pid;

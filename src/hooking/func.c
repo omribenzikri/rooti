@@ -1,5 +1,6 @@
 #include "func.h"
 #include "utils.h"
+#include "../utils.h"
 
 /*
     Saves a reference to the original function we hook. If the recursion protection mechanism in use
@@ -44,7 +45,7 @@ int rooti_install_func_hook(struct rooti_func_hook *hook)
     // Resolve the address to the function
     hook->addr = __kallsyms_lookup_name(hook->name);
     if (hook->addr == 0) {
-        printk(KERN_DEBUG "rooti: unresolved symbol: %s\n", hook->name);
+        ROOTI_DEBUG("unresolved symbol: %s", hook->name);
         return -EINVAL;
     }
 
@@ -58,13 +59,13 @@ int rooti_install_func_hook(struct rooti_func_hook *hook)
     // Set IP filter for the memory address of the original syscall handler
     ret = ftrace_set_filter_ip(&hook->ops, hook->addr, 0, 0);
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: ftrace_set_filter_ip() failed: %d\n", ret);
+        ROOTI_DEBUG("ftrace_set_filter_ip() failed: %d", ret);
         return ret;
     }
     // Register the function
     ret = register_ftrace_function(&hook->ops);
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: register_ftrace_function() failed: %d\n", ret);
+        ROOTI_DEBUG("register_ftrace_function() failed: %d", ret);
         return ret;
     }
 
@@ -79,12 +80,12 @@ void rooti_uninstall_func_hook(struct rooti_func_hook *hook)
     // Unregister hook function
     ret = unregister_ftrace_function(&hook->ops);
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: unregister_ftrace_function() failed: %d\n", ret);
+        ROOTI_DEBUG("unregister_ftrace_function() failed: %d", ret);
     }
     // Remove ftrace filter
     ret = ftrace_set_filter_ip(&hook->ops, hook->addr, 1, 0);
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: ftrace_set_filter_ip() failed: %d\n", ret);
+        ROOTI_DEBUG("ftrace_set_filter_ip() failed: %d", ret);
     }
 }
 

