@@ -30,4 +30,7 @@ extern const size_t ROOTI_HIDDEN_UDP_PORTS_COUNT;
 // Indicates whether this rootkit should be hidden by default
 // #define ROOTI_HIDEME_DEFAULT
 
+// Indicates whether debug logging is enabled
+#define ROOTI_DEBUG_LOGGING
+
 #endif
