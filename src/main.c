@@ -23,7 +23,7 @@ MODULE_AUTHOR("Omri Ben Zikri");
 MODULE_DESCRIPTION("Very fun rootkit");
 MODULE_VERSION("1.0.0");
 
-// Unused signal numbers can, be used by the rootkit for its own purposes
+// Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signals {
     ROOTI_SIG_HIDE = 63,  // toogle hiding of this kernel module
     ROOTI_SIG_REG = 64    // request by a usermode process to be serviced by the rootkit
