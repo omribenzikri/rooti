@@ -9,7 +9,7 @@
 */
 static void rooti_store_original_func(struct rooti_func_hook *hook)
 {
-#if ROOTI_USE_FENTRY_OFFSET
+#ifdef ROOTI_USE_FENTRY_OFFSET
     // Skip over the ftrace call when called from this module - recursion protection mechanism
     *((unsigned long *)hook->orig) = hook->addr + MCOUNT_INSN_SIZE;
 #else
@@ -26,7 +26,7 @@ static void notrace rooti_ftrace_thunk(unsigned long ip, unsigned long parent_ip
     // Obtain a pointer to the container rooti_syscall_hook struct
     struct rooti_func_hook *hook = container_of(ops, struct rooti_func_hook, ops);
 
-#if ROOTI_USE_FENTRY_OFFSET
+#ifdef ROOTI_USE_FENTRY_OFFSET
     regs->regs.ip = (unsigned long)hook->func;
 #else
     // Only point to the hook function if called from outside and not from the hook function, which is local to
