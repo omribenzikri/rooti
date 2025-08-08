@@ -25,7 +25,7 @@ MODULE_DESCRIPTION("Very fun rootkit");
 MODULE_VERSION("1.0.0");
 
 // Unused signal numbers which can be used by the rootkit for its own purposes
-enum rooti_signals {
+enum rooti_signal {
     ROOTI_SIG_REG = 64    // request by a usermode process to be serviced by the rootkit
 };
 
