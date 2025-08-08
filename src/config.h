@@ -27,12 +27,6 @@ extern const size_t ROOTI_HIDDEN_TCP_PORTS_COUNT;
 extern const unsigned short ROOTI_HIDDEN_UDP_PORTS[];
 extern const size_t ROOTI_HIDDEN_UDP_PORTS_COUNT;
 
-// Indicates whether this rootkit should be hidden by default
-#define ROOTI_SHOWME_DEFAULT
-
-// Indicates whether debug logging is enabled
-#define ROOTI_DEBUG_LOGGING
-
 /* 
  * Recursion loops protection mechanism - often times hooked functions call 
  * their original predecessor. The call to the original kernel function would trigger the
@@ -45,5 +39,13 @@ extern const size_t ROOTI_HIDDEN_UDP_PORTS_COUNT;
  *    Used by leaving ROOTI_USE_FENTRY_OFFSET undefined.
  */
 #define ROOTI_USE_FENTRY_OFFSET
+
+// Indicates whether this rootkit should be hidden from userspace.
+// This flag should only be set for debugging purposes
+#define ROOTI_DEBUG_SHOWME
+
+// Indicates whether logging is enabled.
+// This flag should only be set for debugging purposes
+#define ROOTI_DEBUG_LOGGING
 
 #endif
