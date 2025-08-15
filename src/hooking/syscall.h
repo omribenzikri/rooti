@@ -27,12 +27,7 @@ struct rooti_syscall_hook {
     void *orig;            // pointer to the original function
 };
 
-/* 
-    Kernel system call table. The address of this pointer is resolved by the
-    initialization function in utils.c
-*/
-extern unsigned long *__sys_call_table;
-
+int rooti_resolve_syscall_table_addr(void);
 int rooti_install_syscall_hook(struct rooti_syscall_hook *hook);
 int rooti_install_syscall_hooks(struct rooti_syscall_hook *hooks, size_t count);
 void rooti_uninstall_syscall_hook(struct rooti_syscall_hook *hook);

