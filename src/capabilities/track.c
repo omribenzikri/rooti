@@ -3,6 +3,9 @@
 #include "track.h"
 #include "../utils.h"
 
+DEFINE_MUTEX(rooti_track_mutex);
+
+
 // Append a new tracked file descriptor record into the supplied list
 int rooti_track_fd(int fd, struct list_head *list)
 {
@@ -15,18 +18,24 @@ int rooti_track_fd(int fd, struct list_head *list)
     tracked_fd->pid = current->pid;
     tracked_fd->fd = fd;
 
-    // Append the new record
+    // Initialize a new list node
     INIT_LIST_HEAD(&tracked_fd->head);
-    list_add_tail(&tracked_fd->head, list);
+
+    // Append newly created node
+    mutex_lock(&rooti_track_mutex);
+    list_add_tail_rcu(&tracked_fd->head, list);
+    mutex_unlock(&rooti_track_mutex);
 
     return 0;
 }
 
-// Removes the given tracked file descriptor from its list
+// Removes the given tracked file descriptor from its list and releases its descriptor
 void rooti_untrack_fd(struct rooti_tracked_fd *tracked_fd)
 {
-    // Remove the record from the list and release the memory
-    list_del(&tracked_fd->head);
+    mutex_lock(&rooti_track_mutex);
+    list_del_rcu(&tracked_fd->head);
+    mutex_unlock(&rooti_track_mutex);
+    synchronize_rcu();
     kfree(tracked_fd);
 }
 
@@ -37,10 +46,15 @@ void rooti_untrack_fd(struct rooti_tracked_fd *tracked_fd)
 bool rooti_is_tracked_fd(int fd, struct list_head *list)
 {
     struct rooti_tracked_fd *record;
-    list_for_each_entry(record, list, head) {
+    bool found = false;
+
+    rcu_read_lock();
+    list_for_each_entry_rcu(record, list, head) {
         if (current->pid == record->pid && fd == record->fd) {
-            return true;
+            found = true;
+            break;
         }
     }
-    return false;
+    rcu_read_unlock();
+    return found;
 }
