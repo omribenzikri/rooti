@@ -40,21 +40,32 @@ void rooti_untrack_fd(struct rooti_tracked_fd *tracked_fd)
 }
 
 /*
+    Searches the given list for a tracking of the given FD with respect to the PID
+    of the current process in execution. If found, returns a pointer to the object,
+    otherwise, returns NULL.
+*/
+struct rooti_tracked_fd *rooti_search_tracked_fd(int fd, struct list_head *list)
+{
+    struct rooti_tracked_fd *curr_record = NULL;
+    struct rooti_tracked_fd *found_record = NULL;
+
+    rcu_read_lock();
+    list_for_each_entry_rcu(curr_record, list, head) {
+        if (current->pid == curr_record->pid && fd == curr_record->fd) {
+            found_record = curr_record;
+            break;
+        }
+    }
+    rcu_read_unlock();
+    return found_record;
+}
+
+
+/*
     Determines whether the given file descriptor is tracked in the given list, with respect
     to the PID of the current process in execution.
 */
 bool rooti_is_tracked_fd(int fd, struct list_head *list)
 {
-    struct rooti_tracked_fd *record;
-    bool found = false;
-
-    rcu_read_lock();
-    list_for_each_entry_rcu(record, list, head) {
-        if (current->pid == record->pid && fd == record->fd) {
-            found = true;
-            break;
-        }
-    }
-    rcu_read_unlock();
-    return found;
+    return rooti_search_tracked_fd(fd, list) != NULL;
 }
