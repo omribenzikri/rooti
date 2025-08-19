@@ -1,8 +1,5 @@
-#include <linux/types.h>
 #include <asm/paravirt.h>
 #include "utils.h"
-
-unsigned long (*__kallsyms_lookup_name)(const char *name) = NULL;
 
 /*
     Custom utility function for writing into the CR0 register. It is needed as the original function

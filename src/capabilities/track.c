@@ -3,6 +3,9 @@
 #include "track.h"
 #include "../utils.h"
 
+DEFINE_MUTEX(rooti_track_mutex);
+
+
 // Append a new tracked file descriptor record into the supplied list
 int rooti_track_fd(int fd, struct list_head *list)
 {
@@ -15,20 +18,48 @@ int rooti_track_fd(int fd, struct list_head *list)
     tracked_fd->pid = current->pid;
     tracked_fd->fd = fd;
 
-    // Append the new record
+    // Initialize a new list node
     INIT_LIST_HEAD(&tracked_fd->head);
-    list_add_tail(&tracked_fd->head, list);
+
+    // Append newly created node
+    mutex_lock(&rooti_track_mutex);
+    list_add_tail_rcu(&tracked_fd->head, list);
+    mutex_unlock(&rooti_track_mutex);
 
     return 0;
 }
 
-// Removes the given tracked file descriptor from its list
+// Removes the given tracked file descriptor from its list and releases its descriptor
 void rooti_untrack_fd(struct rooti_tracked_fd *tracked_fd)
 {
-    // Remove the record from the list and release the memory
-    list_del(&tracked_fd->head);
+    mutex_lock(&rooti_track_mutex);
+    list_del_rcu(&tracked_fd->head);
+    mutex_unlock(&rooti_track_mutex);
+    synchronize_rcu();
     kfree(tracked_fd);
 }
+
+/*
+    Searches the given list for a tracking of the given FD with respect to the PID
+    of the current process in execution. If found, returns a pointer to the object,
+    otherwise, returns NULL.
+*/
+struct rooti_tracked_fd *rooti_search_tracked_fd(int fd, struct list_head *list)
+{
+    struct rooti_tracked_fd *curr_record = NULL;
+    struct rooti_tracked_fd *found_record = NULL;
+
+    rcu_read_lock();
+    list_for_each_entry_rcu(curr_record, list, head) {
+        if (current->pid == curr_record->pid && fd == curr_record->fd) {
+            found_record = curr_record;
+            break;
+        }
+    }
+    rcu_read_unlock();
+    return found_record;
+}
+
 
 /*
     Determines whether the given file descriptor is tracked in the given list, with respect
@@ -36,11 +67,5 @@ void rooti_untrack_fd(struct rooti_tracked_fd *tracked_fd)
 */
 bool rooti_is_tracked_fd(int fd, struct list_head *list)
 {
-    struct rooti_tracked_fd *record;
-    list_for_each_entry(record, list, head) {
-        if (current->pid == record->pid && fd == record->fd) {
-            return true;
-        }
-    }
-    return false;
+    return rooti_search_tracked_fd(fd, list) != NULL;
 }

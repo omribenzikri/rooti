@@ -14,6 +14,8 @@ struct rooti_tracked_fd {
 
 int rooti_track_fd(int fd, struct list_head *list);
 void rooti_untrack_fd(struct rooti_tracked_fd *tracked_fd);
+
+struct rooti_tracked_fd *rooti_search_tracked_fd(int fd, struct list_head *list);
 bool rooti_is_tracked_fd(int fd, struct list_head *list);
 
 #endif

