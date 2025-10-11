@@ -7,6 +7,7 @@
 #include <linux/dirent.h>
 #include <linux/threads.h>
 #include <linux/file.h>
+#include <linux/filter.h>
 #include <net/sock.h>
 #include <net/tcp.h>
 #include "hooking/utils.h"
@@ -203,6 +204,11 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
 {
     int fd = regs->di;
     int optname = regs->dx;
+    int optlen = regs->r8;
+    sockptr_t optval = USER_SOCKPTR((char __user *)regs->r10);
+
+    struct socket *sock;
+    struct sock_fprog_kern user_fprog_kernel;
     int err = orig_setsockopt(regs);
 
     // For now we only care about hooking the option to attach a socket filter
@@ -210,13 +216,18 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
         return err;
     }
 
-    struct socket *sock = sock_from_file(fget(fd));
+    sock = sock_from_file(fget(fd));
     if (sock == NULL) {
-        ROOTI_DEBUG("failed to convert file struct to sock struct");
+        ROOTI_DEBUG("sock_from_file() failed");
         return 0;
     }
 
-    rooti_attach_traffic_filter(sock->sk);
+    err = rooti_copy_user_fprog(&user_fprog_kernel, optval, optlen);
+    if (err) {
+        return 0;
+    }
+    rooti_inject_traffic_filter(sock->sk, &user_fprog_kernel);
+    kfree(user_fprog_kernel.filter);
 
     return 0;
 }
