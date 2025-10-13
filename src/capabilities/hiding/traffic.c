@@ -14,7 +14,6 @@ static void rooti_replace_ret_instructions(struct sock_fprog_kern *filter_progra
         if (BPF_CLASS(filter_program->filter[i].code) != BPF_RET) { continue; }
         if (filter_program->filter[i].k == 0) { continue; }
 
-        // TODO: make sure the user program doesn't surpass 255 instructions as to not overflow K
         loff_t jmp_offset = program_offset - (i + 1);
         filter_program->filter[i].code = BPF_JMP | BPF_JA;
         filter_program->filter[i].jt = 0;
@@ -95,6 +94,11 @@ int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog_kern *user_
     struct sock_fprog_kern complete_filter_program;
     struct bpf_prog *bpf_program;
     int err;
+
+    if (kern_filter_program.len > 255) {
+        ROOTI_DEBUG("configured BPF filter is longer than the maximum of 255 instructions");
+        return -EINVAL;
+    }
 
     err = rooti_concat_filter_programs(&kern_filter_program, user_filter_program, &complete_filter_program);
     if (err) {
