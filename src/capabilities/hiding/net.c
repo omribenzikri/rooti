@@ -113,6 +113,7 @@ static int rooti_attach_traffic_filter(struct sock *sock, struct sock_fprog_kern
         ROOTI_DEBUG("__sk_attach_prog() failed: %d", err);
         return err;
     }
+
     return 0;
 }
 
@@ -147,8 +148,9 @@ int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog *user_fprog
     }
 
     err = rooti_attach_traffic_filter(sock, &merged_fprog);
+    
+    kfree(user_fprog_kernel.filter);
     kfree(merged_fprog.filter);
-
     return err;
 }
 
@@ -167,5 +169,6 @@ int rooti_overwrite_traffic_filter(struct sock *sock)
         ROOTI_DEBUG("configured BPF filter is longer than the maximum of 255 instructions");
         return -EINVAL;
     }
+
     return rooti_attach_traffic_filter(sock, &fprog);
 }

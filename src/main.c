@@ -249,11 +249,10 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
         err = copy_bpf_fprog_from_user(&user_fprog, optval, optlen);
         if (err) {
             ROOTI_DEBUG("copy_bpf_fprog_from_user() failed: %d", err);
-            return err;
+            return 0;
         }
         
         rooti_inject_traffic_filter(sock->sk, &user_fprog);
-        kfree(user_fprog.filter);
         break;
         
     case SO_DETACH_FILTER:
