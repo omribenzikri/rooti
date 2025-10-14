@@ -3,7 +3,7 @@
 #include <linux/unistd.h>
 #include <linux/kernel.h>
 #include <linux/mutex.h>
-#include "unload.h"
+#include "unloading.h"
 #include "../utils.h"
 
 static struct module *mod = NULL;
