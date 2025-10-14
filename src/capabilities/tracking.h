@@ -1,5 +1,5 @@
-#ifndef _ROOTI_TRACK_H
-#define _ROOTI_TRACK_H
+#ifndef _ROOTI_TRACKING_H
+#define _ROOTI_TRACKING_H
 
 /*
     This struct stores some file descriptor that is of interest to us which was opened
