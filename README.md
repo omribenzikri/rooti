@@ -11,8 +11,9 @@ The project is still in a pretty rough shape, but these are the currently suppor
 * Hiding files & directories
 * Hiding processes
 * Hiding open TCP & UDP ports
+* Hiding network traffic from sniffers
 * Hiding logged in users
-* Hiding the rootkit itself
+* Hiding the module itself
 * Rigging system PRNG utils (/dev/random & /dev/urandom)
 
 The rootkit supports a few types of kernel hooks:

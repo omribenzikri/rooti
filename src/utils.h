@@ -11,6 +11,20 @@
 #endif
 
 /*
+    This macro declares a local function pointer to a kernel function named 'symbol' whose address
+    is resolved by using kallsyms_lookup_name(). The generated symbol is the same as 'symbol' with two
+    leading underscores. On error, 'error_value' is returned. The function signature is specifying by
+    'return_type' and the following variable number of args which specify the argument types in order. 
+*/
+#define ROOTI_RESOLVE_FUNC_ADDR(symbol, error_value, return_type, ...)  \
+typedef return_type (*symbol##_t)(__VA_ARGS__);                         \
+symbol##_t __##symbol = (symbol##_t)__kallsyms_lookup_name(#symbol);    \
+if (__##symbol == NULL) {                                               \
+    ROOTI_DEBUG("unresolved symbol ' ## symbol'");                      \
+    return error_value;                                                 \
+}                                                                       \
+
+/*
     Reference to the kallsyms_lookup_name() kernel function which is no longer exported. 
     The address of this function pointer should be filled in during initialization
     by rooti_resolve_kln_addr();
