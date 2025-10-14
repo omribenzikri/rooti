@@ -1,3 +1,8 @@
+/*
+    This is a copy of the utmp.h header from the Linux userspace API. It is here because we need a definition
+    of struct utmp which defines a single login entry logged in /var/run/utmp.
+*/
+
 #ifndef _UTMP_H
 #define _UTMP_H
 
