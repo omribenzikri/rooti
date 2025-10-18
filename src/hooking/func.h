@@ -26,9 +26,6 @@ struct rooti_func_hook {
     struct ftrace_ops ops;    // ftrace configuration
 };
 
-void rooti_install_inline_hook(struct rooti_func_hook *hook);
-void rooti_uninstall_inline_hook(struct rooti_func_hook *hook);
-
 int rooti_install_func_hook(struct rooti_func_hook *hook);
 int rooti_install_func_hooks(struct rooti_func_hook *hooks, size_t count);
 void rooti_uninstall_func_hook(struct rooti_func_hook *hook);
