@@ -11,18 +11,25 @@
 #endif
 
 /*
-    This macro declares a local function pointer to a kernel function named 'symbol' whose address
+    This macro declares a local pointer to a kernel symbol named 'symbol' whose address
     is resolved by using kallsyms_lookup_name(). The generated symbol is the same as 'symbol' with two
-    leading underscores. On error, 'error_value' is returned. The function signature is specifying by
-    'return_type' and the following variable number of args which specify the argument types in order. 
+    leading underscores. On error, 'error_value' is returned.
+*/
+#define ROOTI_RESOLVE_SYM_ADDR(type, symbol, error_value)               \
+type __##symbol = (type)__kallsyms_lookup_name(#symbol);                \
+if (__##symbol == NULL) {                                               \
+    ROOTI_DEBUG("unresolved symbol '%s'", #symbol);                     \
+    return error_value;                                                 \
+}
+
+/*
+    Just like the macro above but specifically for function pointers. The function signature is typedef'ed
+    as <symbol>_t and is constructed by:  'return_type' and the following variable number of args which
+    specify the argument types in order. 
 */
 #define ROOTI_RESOLVE_FUNC_ADDR(symbol, error_value, return_type, ...)  \
 typedef return_type (*symbol##_t)(__VA_ARGS__);                         \
-symbol##_t __##symbol = (symbol##_t)__kallsyms_lookup_name(#symbol);    \
-if (__##symbol == NULL) {                                               \
-    ROOTI_DEBUG("unresolved symbol ' ## symbol'");                      \
-    return error_value;                                                 \
-}                                                                       \
+ROOTI_RESOLVE_SYM_ADDR(symbol##_t, symbol, error_value)
 
 /*
     Reference to the kallsyms_lookup_name() kernel function which is no longer exported. 

