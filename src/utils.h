@@ -29,7 +29,7 @@ if (__##symbol == NULL) {                                               \
 */
 #define ROOTI_RESOLVE_FUNC_ADDR(symbol, error_value, return_type, ...)  \
 typedef return_type (*symbol##_t)(__VA_ARGS__);                         \
-ROOTI_RESOLVE_SYM_ADDR(symbol##_t, symbol, error_value)                                                               \
+ROOTI_RESOLVE_SYM_ADDR(symbol##_t, symbol, error_value)
 
 /*
     Reference to the kallsyms_lookup_name() kernel function which is no longer exported. 
