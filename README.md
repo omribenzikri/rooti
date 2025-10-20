@@ -4,8 +4,9 @@
 
 ## Rooti
 
-Fun Linux LKM rootkit I made for learning more about how the kernel works.
-Supports the x86-64 architecture and tested on Linux 6.8.0
+Fun Linux LKM rootkit I made for learning more about how the kernel works.<br>
+Supports the x86-64 architecture and tested on Linux 6.8.0<br>
+**This software is provided for educational and research purposes only**.
 
 The project is still in a pretty rough shape, but these are the currently supported features:
 * Local root privilege-escalation for userspace processes
