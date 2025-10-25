@@ -1,3 +1,4 @@
+#include <linux/in.h>
 #include "config.h"
 
 /*
@@ -70,3 +71,10 @@ struct sock_filter ROOTI_BPF_FILTER_PROGRAM[] = {
     { 0x6, 0, 0, 0x00040000 },
 };
 DECLARE_ARRAY_SIZE(ROOTI_BPF_FILTER_PROGRAM);
+
+struct rooti_net_rule ROOTI_NET_RULES[] = {
+    { .daddr = { 0x01010101, 0xFFFFFFFF }, .protocol = IPPROTO_ICMP, .action = ROOTI_PACKET_DROP },
+    { .saddr = {0xc0a80180, 0xFFFFFFFF}, .protocol = IPPROTO_TCP, .sport = 8080, .action = ROOTI_PACKET_ACCEPT },
+    { .daddr = {0xc0a80180, 0xFFFFFFFF}, .protocol = IPPROTO_TCP, .dport = 8080, .action = ROOTI_PACKET_ACCEPT }
+};
+DECLARE_ARRAY_SIZE(ROOTI_NET_RULES);
