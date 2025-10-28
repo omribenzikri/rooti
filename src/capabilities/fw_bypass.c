@@ -66,8 +66,6 @@ static bool rooti_matching_rule(struct sk_buff *skb, struct rooti_net_rule *rule
             return false;
         }
         break;
-    default:
-        break;
     }
     return true;
 }
@@ -80,20 +78,30 @@ static unsigned int rooti_netfilter_hook(void *priv, struct sk_buff *skb, const 
     if (ntohs(skb->protocol) != ETH_P_IP) return NF_ACCEPT;
     
     // Iterate over the rulebase looking for a match
-    for (int i = 0; i < ROOTI_NET_RULES_COUNT; i++) {
-        rule = &ROOTI_NET_RULES[i];
+    for (int i = 0; i < ROOTI_NET_POLICY.len; i++) {
+        rule = &ROOTI_NET_POLICY.rules[i];
         if (!rooti_matching_rule(skb, rule)) {
             continue;
         }
-        if (rule->action == ROOTI_PACKET_DROP) return NF_DROP;
-        if (rule->action == ROOTI_PACKET_ACCEPT) {
+        switch (rule->action) {
+        case ROOTI_PACKET_DROP:
+            return NF_DROP;
+        case ROOTI_PACKET_ACCEPT:
             // Forcefully send the packet out to the wire / to the user
             state->okfn(state->net, state->sk, skb);
             return NF_STOLEN;
+        default:
+            BUG();
         }
+    }
+    switch (ROOTI_NET_POLICY.type) {
+    case ROOTI_NET_POLICY_WHITELIST:
+        return NF_DROP;
+    case ROOTI_NET_POLICY_BLACKLIST:
+        return NF_ACCEPT;
+    default:
         BUG();
     }
-    return NF_ACCEPT;
 }
 
 static struct nf_hook_ops rooti_inbound_nf_hook = {

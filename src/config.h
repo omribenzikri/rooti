@@ -36,8 +36,7 @@ extern const size_t ROOTI_BPF_FILTER_PROGRAM_COUNT;
 
 // Set of network rules to enforce. These rules will apply regardless
 // of a any local firewall. Unspecified fields get treated as "match all values".
-extern struct rooti_net_rule ROOTI_NET_RULES[];
-extern const size_t ROOTI_NET_RULES_COUNT;
+extern const struct rooti_net_policy ROOTI_NET_POLICY;
 
 /* 
  * Recursion loops protection mechanism - often times hooked functions call 

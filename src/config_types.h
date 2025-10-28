@@ -7,6 +7,12 @@ enum rooti_net_rule_action {
     ROOTI_PACKET_ACCEPT
 };
 
+// Specifies what to do with unmatched traffic
+enum rooti_net_policy_type {
+    ROOTI_NET_POLICY_WHITELIST, // drop unmatched packets
+    ROOTI_NET_POLICY_BLACKLIST  // accept unmatched packets
+};
+
 // IPv4 subnet address
 typedef struct {
     unsigned long addr;
@@ -21,6 +27,13 @@ struct rooti_net_rule {
     unsigned short sport;
     unsigned short dport;
     enum rooti_net_rule_action action;
+};
+
+// Network policy to enfore
+struct rooti_net_policy {
+    enum rooti_net_policy_type type;
+    struct rooti_net_rule *rules;
+    size_t len;
 };
 
 #endif
