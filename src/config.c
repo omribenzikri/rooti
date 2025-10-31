@@ -78,7 +78,7 @@ static struct rooti_net_rule ROOTI_NET_RULES[] = {
 };
 
 const struct rooti_net_policy ROOTI_NET_POLICY = {
-    .type = ROOTI_NET_POLICY_WHITELIST,
+    .type = ROOTI_NET_POLICY_BLACKLIST,
     .rules = ROOTI_NET_RULES,
     .len = ARRAY_SIZE(ROOTI_NET_RULES)
 };
