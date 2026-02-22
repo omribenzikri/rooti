@@ -8,7 +8,7 @@
 
 #define MODULE_REF_BASE 1
 
-// Implemented in deallocate.S
+// Implemented in asm/unloading.S
 extern void rooti_self_deallocate(struct work_struct *work);
 DECLARE_WORK(rooti_self_deallocate_work, rooti_self_deallocate);
 

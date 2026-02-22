@@ -5,7 +5,7 @@ SOURCE_DIR := src
 BUILD_DIR := bin
 BUILD_DIR_KBUILD := $(BUILD_DIR)/Kbuild
 
-SOURCES := $(wildcard $(SOURCE_DIR)/*.c) $(wildcard $(SOURCE_DIR)/hooking/*.c) $(wildcard $(SOURCE_DIR)/capabilities/*.c) $(wildcard $(SOURCE_DIR)/capabilities/hiding/*.c) $(SOURCE_DIR)/capabilities/deallocate.S
+SOURCES := $(wildcard $(SOURCE_DIR)/*.c) $(wildcard $(SOURCE_DIR)/hooking/*.c) $(wildcard $(SOURCE_DIR)/capabilities/*.c) $(wildcard $(SOURCE_DIR)/capabilities/hiding/*.c) $(wildcard $(SOURCE_DIR)/capabilities/asm/*.S)
 SOURCES_SYMLINKS = $(subst $(SOURCE_DIR), $(BUILD_DIR), $(SOURCES))
 
 HEADERS := $(wildcard $(SOURCE_DIR)/*.h) $(wildcard $(SOURCE_DIR)/hooking/*.h) $(wildcard $(SOURCE_DIR)/capabilities/*.h) $(wildcard $(SOURCE_DIR)/capabilities/hiding/*.h)
@@ -24,6 +24,7 @@ $(BUILD_DIR_KBUILD): $(BUILD_DIR)
 $(BUILD_DIR):
 	mkdir -p bin/hooking
 	mkdir -p bin/capabilities/hiding
+	mkdir -p bin/capabilities/asm
 
 clean:
 	rm -rf $(BUILD_DIR)
