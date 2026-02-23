@@ -9,9 +9,9 @@
 #include "../config.h"
 
 // Returns whether the given address is contained in the given subnet.
-static inline bool rooti_subnet_contains(subnet_t *subnet, unsigned long addr)
+static inline bool rooti_subnet_contains(subnet_addr_t *subnet_addr, unsigned long addr)
 {
-    return (subnet->addr & subnet->mask) == (addr & subnet->mask);
+    return (subnet_addr->prefix & subnet_addr->mask) == (addr & subnet_addr->mask);
 }
 
 // Returns whether the given IP header contains source & destination addresses that match the rule

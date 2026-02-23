@@ -12,11 +12,7 @@ unsigned long *__sys_call_table = NULL;
 */
 int rooti_resolve_syscall_table_addr()
 {
-    __sys_call_table = (unsigned long *)__kallsyms_lookup_name("sys_call_table");
-    if (__sys_call_table == NULL) {
-        ROOTI_DEBUG("could not resolve the address of sys_call_table");
-        return -EFAULT;
-    }
+    ROOTI_RESOLVE_SYM_ADDR(unsigned long *, sys_call_table, -ENOENT)
     return 0;
 }
 

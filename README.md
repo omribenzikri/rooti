@@ -8,8 +8,8 @@ Fun Linux LKM rootkit I made for learning more about how the kernel works.<br>
 Supports the x86-64 architecture and tested on Linux 6.8.0<br>
 **This software is provided for educational and research purposes only**.
 
-The project is still in a pretty rough shape, but these are the currently supported features:
-* Local root privilege escalation
+These are the currently supported features:
+* Privilege escalation to root
 * Hiding files & directories
 * Hiding processes
 * Hiding open TCP & UDP ports
@@ -20,6 +20,6 @@ The project is still in a pretty rough shape, but these are the currently suppor
 * Rigging system PRNG utils (/dev/random & /dev/urandom)
 * Self deletion from within kernel mode
 
-The rootkit supports a few types of kernel hooks:
+The rootkit supports these types of kernel hooks:
 * Syscall hooking via syscall table hijacking
 * Function hooking via ftrace

