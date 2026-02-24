@@ -75,3 +75,13 @@ struct rooti_tracked_proc *rooti_search_tracked_proc(pid_t pid, struct list_head
     rcu_read_unlock();
     return found_record;
 }
+
+void rooti_clear_proc_tracking(struct list_head *list)
+{
+    struct rooti_tracked_proc *record;
+    struct rooti_tracked_proc *tmp;
+
+    list_for_each_entry_safe(record, tmp, list, head) {
+        rooti_untrack_proc(record);
+    }
+}

