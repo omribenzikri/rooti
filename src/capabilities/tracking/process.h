@@ -16,6 +16,10 @@ struct rooti_tracked_proc {
 
 int rooti_track_proc(pid_t pid, struct rooti_tracked_proc **dest, struct list_head *list);
 int rooti_track_proc_attr(pid_t pid, enum rooti_proc_attr attr, struct list_head *list);
+
+void rooti_untrack_proc(struct rooti_tracked_proc *tracked_proc);
+void rooti_untrack_proc_attr(pid_t pid, enum rooti_proc_attr attr, struct list_head *list);
+
 struct rooti_tracked_proc *rooti_search_tracked_proc(pid_t pid, struct list_head *list);
 
 

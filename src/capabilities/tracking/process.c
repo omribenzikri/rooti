@@ -40,6 +40,26 @@ int rooti_track_proc_attr(pid_t pid, enum rooti_proc_attr attr, struct list_head
     return 0;
 }
 
+void rooti_untrack_proc(struct rooti_tracked_proc *tracked_proc)
+{
+    mutex_lock(&rooti_proc_tracking_mutex);
+    list_del_rcu(&tracked_proc->head);
+    mutex_unlock(&rooti_proc_tracking_mutex);
+    synchronize_rcu();
+    kfree(tracked_proc);
+}
+
+void rooti_untrack_proc_attr(pid_t pid, enum rooti_proc_attr attr, struct list_head *list)
+{
+    struct rooti_tracked_proc *tracked_proc = rooti_search_tracked_proc(pid, list);
+    if (tracked_proc == NULL) return;
+
+    clear_bit(attr, &tracked_proc->attrs);
+    if (tracked_proc->attrs == 0) {
+        rooti_untrack_proc(tracked_proc);
+    }
+} 
+
 struct rooti_tracked_proc *rooti_search_tracked_proc(pid_t pid, struct list_head *list)
 {
     struct rooti_tracked_proc *curr_record = NULL;
