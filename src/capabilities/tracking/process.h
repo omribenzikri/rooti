@@ -5,7 +5,7 @@
 
 enum rooti_proc_attr {
     ROOTI_PROC_HIDDEN,
-    ROOTI_PROC_BOUND
+    ROOTI_PROC_LIFETIME_BOUND
 };
 
 struct rooti_tracked_proc {
