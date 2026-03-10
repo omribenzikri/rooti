@@ -4,12 +4,10 @@
 #include <linux/ftrace.h>
 #include "../config.h"
 
-
 #ifndef ROOTI_USE_FENTRY_OFFSET
 #pragma GCC optimize("-fno-optimize-sibling-calls")
 #endif
 
-// Shorthand for initializing function hook objects
 #define ROOTI_FUNC_HOOK(_name, _hook, _orig) \
 { \
     .name = (_name), \
@@ -17,11 +15,10 @@
     .orig = (_orig)  \
 }
 
-// Represents a function hook achieved by abusing the ftrace framework.
 struct rooti_func_hook {
     char *name;               // hooked function name
     void *func;               // pointer to hook function
-    void *orig;               // pointer to the original function
+    void *orig;               // pointer to original function
     unsigned long addr;       // real memory address of the original function
     struct ftrace_ops ops;    // ftrace configuration
 };

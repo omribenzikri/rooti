@@ -8,7 +8,6 @@
 #define ROOTI_SYSCALL_NAME(name) (name)
 #endif
 
-// Shorthand for initializing syscall hook objects
 #define ROOTI_SYSCALL_HOOK(_idx, _hook, _orig) \
 { \
     .idx = (_idx), \
@@ -16,15 +15,10 @@
     .orig = (_orig)  \
 }
 
-/*
-    Represents a syscall table hook. Installing the hook shall replace the idx's entry in the
-    syscall table with the function pointed to by 'func' while saving a reference to the original
-    function in 'orig'.
-*/ 
 struct rooti_syscall_hook {
-    unsigned int idx;      // index of the syscall in the kernel syscall table
+    unsigned int idx;      // system call number
     void *func;            // pointer to hook function
-    void *orig;            // pointer to the original function
+    void *orig;            // pointer to original function
 };
 
 int rooti_resolve_syscall_table_addr(void);
