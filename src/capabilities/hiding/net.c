@@ -73,7 +73,7 @@ static int rooti_copy_user_fprog(struct sock_fprog_kern *user_fprog_kernel,
                                  struct sock_fprog *user_fprog)
 {
     size_t user_program_size = bpf_classic_proglen(user_fprog);
-    int err;
+    int ret;
 
     user_fprog_kernel->len = user_fprog->len;
     user_fprog_kernel->filter = kmalloc(user_program_size, GFP_KERNEL);
@@ -82,9 +82,9 @@ static int rooti_copy_user_fprog(struct sock_fprog_kern *user_fprog_kernel,
         return -ENOMEM;
     }
 
-    err = copy_from_user(user_fprog_kernel->filter, user_fprog->filter, user_program_size);
-    if (err) {
-        ROOTI_DEBUG("copy_from_user() failed: %d", err);
+    ret = copy_from_user(user_fprog_kernel->filter, user_fprog->filter, user_program_size);
+    if (ret > 0) {
+        ROOTI_DEBUG("copy_from_user() failed: %d", ret);
         return -EFAULT;
     }
 

