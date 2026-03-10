@@ -12,10 +12,12 @@ unsigned long (*__kallsyms_lookup_name)(const char *name) = NULL;
 int rooti_resolve_kln_addr()
 {
     struct kprobe kp;
+    int err;
+
     memset(&kp, 0, sizeof(kp));
     kp.symbol_name = "kallsyms_lookup_name";
 
-    int err = register_kprobe(&kp);
+    err = register_kprobe(&kp);
     if (err) {
         ROOTI_DEBUG("register_kprobe() failed: %d", err);
         return err;

