@@ -98,7 +98,7 @@ static int rooti_attach_traffic_filter(struct sock *sock, struct sock_fprog_kern
     int err;
 
     err = bpf_prog_create(&bpf_prog, fprog);
-    if (bpf_prog == NULL) {
+    if (err) {
         ROOTI_DEBUG("bpf_prog_create() failed %d", err);
         return err;
     }
