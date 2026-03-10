@@ -1,4 +1,5 @@
 #include <asm/paravirt.h>
+#include <asm/processor-flags.h>
 #include "utils.h"
 
 /*
@@ -13,10 +14,10 @@ inline void rooti_force_write_cr0(unsigned long val)
 
 inline void rooti_unprotect_memory()
 {
-    rooti_force_write_cr0(read_cr0() & (~0x10000));
+    rooti_force_write_cr0(read_cr0() & (~X86_CR0_WP));
 }
 
 inline void rooti_protect_memory()
 {
-    rooti_force_write_cr0(read_cr0() | (0x10000));
+    rooti_force_write_cr0(read_cr0() | (X86_CR0_WP));
 }
