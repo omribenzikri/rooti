@@ -129,7 +129,8 @@ int rooti_inject_traffic_filter(struct sock *sock, struct sock_fprog *user_fprog
     int err;
 
     if (kernel_fprog.len > ROOTI_MAX_BPF_PROGRAM_LEN) {
-        ROOTI_DEBUG("configured BPF filter is longer than the maximum of 255 instructions");
+        ROOTI_DEBUG("configured BPF filter is longer than the maximum of %d instructions",
+                    ROOTI_MAX_BPF_PROGRAM_LEN);
         return -EINVAL;
     }
 
@@ -158,7 +159,8 @@ int rooti_overwrite_traffic_filter(struct sock *sock)
     };
 
     if (fprog.len > ROOTI_MAX_BPF_PROGRAM_LEN) {
-        ROOTI_DEBUG("configured BPF filter is longer than the maximum of 255 instructions");
+        ROOTI_DEBUG("configured BPF filter is longer than the maximum of %d instructions",
+                    ROOTI_MAX_BPF_PROGRAM_LEN);
         return -EINVAL;
     }
 
