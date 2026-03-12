@@ -1,8 +1,8 @@
-#ifndef _ROOTI_HOOKING_FUNC_H
-#define _ROOTI_HOOKING_FUNC_H
+#ifndef _ROOTI_HOOKING_H
+#define _ROOTI_HOOKING_H
 
 #include <linux/ftrace.h>
-#include "../config.h"
+#include "config.h"
 
 #ifndef ROOTI_USE_FENTRY_OFFSET
 #pragma GCC optimize("-fno-optimize-sibling-calls")

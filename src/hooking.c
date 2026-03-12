@@ -1,6 +1,5 @@
-#include "func.h"
+#include "hooking.h"
 #include "utils.h"
-#include "../utils.h"
 
 /*
     Saves a reference to the original function we hook. If the recursion protection mechanism in use
@@ -40,7 +39,7 @@ static void notrace rooti_ftrace_thunk(unsigned long ip, unsigned long parent_ip
 
 int rooti_install_func_hook(struct rooti_func_hook *hook)
 {
-    int ret;
+    int err;
 
     hook->addr = __kallsyms_lookup_name(hook->name);
     if (hook->addr == 0) {
@@ -53,16 +52,16 @@ int rooti_install_func_hook(struct rooti_func_hook *hook)
     hook->ops.func = rooti_ftrace_thunk;
     hook->ops.flags = FTRACE_OPS_FL_SAVE_REGS | FTRACE_OPS_FL_RECURSION | FTRACE_OPS_FL_IPMODIFY;
 
-    ret = ftrace_set_filter_ip(&hook->ops, hook->addr, 0, 0);
-    if (ret < 0) {
-        ROOTI_DEBUG("ftrace_set_filter_ip() failed: %d", ret);
-        return ret;
+    err = ftrace_set_filter_ip(&hook->ops, hook->addr, 0, 0);
+    if (err) {
+        ROOTI_DEBUG("ftrace_set_filter_ip() failed: %d", err);
+        return err;
     }
 
-    ret = register_ftrace_function(&hook->ops);
-    if (ret < 0) {
-        ROOTI_DEBUG("register_ftrace_function() failed: %d", ret);
-        return ret;
+    err = register_ftrace_function(&hook->ops);
+    if (err) {
+        ROOTI_DEBUG("register_ftrace_function() failed: %d", err);
+        return err;
     }
 
     return 0;
@@ -70,17 +69,17 @@ int rooti_install_func_hook(struct rooti_func_hook *hook)
 
 void rooti_uninstall_func_hook(struct rooti_func_hook *hook)
 {
-    int ret;
+    int err;
 
-    ret = unregister_ftrace_function(&hook->ops);
-    if (ret < 0) {
-        ROOTI_DEBUG("unregister_ftrace_function() failed: %d", ret);
+    err = unregister_ftrace_function(&hook->ops);
+    if (err) {
+        ROOTI_DEBUG("unregister_ftrace_function() failed: %d", err);
+        return;
     }
 
-    ret = ftrace_set_filter_ip(&hook->ops, hook->addr, 1, 0);
-    if (ret < 0) {
-        ROOTI_DEBUG("ftrace_set_filter_ip() failed: %d", ret);
-    }
+    err = ftrace_set_filter_ip(&hook->ops, hook->addr, 1, 0);
+    if (err)
+        ROOTI_DEBUG("ftrace_set_filter_ip() failed: %d", err);
 }
 
 int rooti_install_func_hooks(struct rooti_func_hook *hooks, size_t count)
