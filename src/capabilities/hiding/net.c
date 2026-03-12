@@ -114,7 +114,7 @@ static int rooti_attach_traffic_filter(struct sock *sock, struct sock_fprog_kern
 }
 
 /*
-    Attaches additional cBPF filters (which are specifyed in the configuration) to the filters
+    Attaches additional cBPF filters (which are specified in the configuration) to the filters
     specified by the user. It effectively merges the user defined filter program with the rootkit's
     filter program such that both filters must be satisfied in order to accept the packet.
 */
