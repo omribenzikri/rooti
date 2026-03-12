@@ -10,6 +10,13 @@
 #define ROOTI_DEBUG(fmt, ...) ((void)0)
 #endif
 
+// On 64 bit systems, the syscall handler symbols are prefixed with '__x64_'.
+#ifdef CONFIG_X86_64
+#define ROOTI_SYSCALL_NAME(name) ("__x64_" name)
+#else
+#define ROOTI_SYSCALL_NAME(name) (name)
+#endif
+
 /*
     This macro declares a local pointer to a kernel symbol named 'symbol' whose address
     is resolved by using kallsyms_lookup_name(). The generated symbol is the same as 'symbol' with two

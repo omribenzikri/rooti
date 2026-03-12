@@ -19,7 +19,3 @@ These are the currently supported features:
 * Bypassing the local firewall
 * Rigging system PRNG utils (/dev/random & /dev/urandom)
 * Self deletion from within kernel mode
-
-The rootkit supports these types of kernel hooks:
-* Syscall hooking via syscall table hijacking
-* Function hooking via ftrace
