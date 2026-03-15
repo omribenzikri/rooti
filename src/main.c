@@ -144,7 +144,9 @@ static asmlinkage long hook_socket(const struct pt_regs *regs)
         return fd;
     }
 
+    lock_sock(sock->sk);
     rooti_overwrite_traffic_filter(sock->sk);
+    release_sock(sock->sk);
     return fd;
 }
 
@@ -175,6 +177,7 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
         return 0;
     }
 
+    lock_sock(sock->sk);
     switch (optname) {
     case SO_ATTACH_FILTER:
         err = copy_bpf_fprog_from_user(&user_fprog, optval, optlen);
@@ -194,6 +197,7 @@ static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
         break;
     }
 
+    release_sock(sock->sk);
     return 0;
 }
 
