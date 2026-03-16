@@ -84,12 +84,12 @@ void rooti_uninstall_func_hook(struct rooti_func_hook *hook)
 
 int rooti_install_func_hooks(struct rooti_func_hook *hooks, size_t count)
 {
-    int ret;
+    int err;
     int i;
     
     for (i = 0; i < count; i++) {
-        ret = rooti_install_func_hook(&hooks[i]);
-        if (ret < 0) {
+        err = rooti_install_func_hook(&hooks[i]);
+        if (err) {
             goto error;
         }
     }
@@ -99,7 +99,7 @@ error:
     while (i > 0) {
         rooti_uninstall_func_hook(&hooks[--i]);
     }
-    return ret;
+    return err;
 }
 
 void rooti_uninstall_func_hooks(struct rooti_func_hook *hooks, size_t count)
