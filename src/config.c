@@ -65,13 +65,13 @@ struct sock_filter ROOTI_BPF_FILTER_PROGRAM[] = {
 };
 DECLARE_ARRAY_SIZE(ROOTI_BPF_FILTER_PROGRAM);
 
-static struct rooti_net_rule ROOTI_NET_RULES[] = {
+static struct rooti_net_rule ROOTI_FW_RULES[] = {
     { .saddr = { 0xc0a8016c, 0xFFFFFFFF }, .daddr = { 0xc0a8017d, 0xFFFFFFFF }, .protocol = IPPROTO_TCP, .dport = 22, .action = ROOTI_PACKET_ACCEPT },
     { .saddr = { 0xc0a8017d, 0xFFFFFFFF }, .daddr = { 0xc0a8016c, 0xFFFFFFFF }, .protocol = IPPROTO_TCP, .sport = 22, .action = ROOTI_PACKET_ACCEPT },
 };
 
-const struct rooti_net_policy ROOTI_NET_POLICY = {
+const struct rooti_net_policy ROOTI_FW_POLICY = {
     .type = ROOTI_NET_POLICY_BLACKLIST,
-    .rules = ROOTI_NET_RULES,
-    .len = ARRAY_SIZE(ROOTI_NET_RULES)
+    .rules = ROOTI_FW_RULES,
+    .len = ARRAY_SIZE(ROOTI_FW_RULES)
 };

