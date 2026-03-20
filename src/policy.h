@@ -1,5 +1,5 @@
-#ifndef _ROOTI_NET_POLICY_H
-#define _ROOTI_NET_POLICY_H
+#ifndef _ROOTI_POLICY_H
+#define _ROOTI_POLICY_H
 
 #include <linux/skbuff.h>
 

