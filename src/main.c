@@ -161,7 +161,8 @@ static int hook_packet_rcv(struct sk_buff *skb, struct net_device *dev,
     enum rooti_net_rule_action action;
     rooti_match_packet(skb, &ROOTI_PCAP_POLICY, &action);
 
-    switch (action) {
+    switch (action)
+    {
     case ROOTI_PACKET_DROP:
         kfree_skb(skb);
         return 0;
@@ -178,7 +179,8 @@ static int hook_tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
     enum rooti_net_rule_action action;
     rooti_match_packet(skb, &ROOTI_PCAP_POLICY, &action);
 
-    switch (action) {
+    switch (action)
+    {
     case ROOTI_PACKET_DROP:
         kfree_skb(skb);
         return 0;

@@ -11,7 +11,8 @@ static unsigned int rooti_netfilter_hook(void *priv, struct sk_buff *skb,
     enum rooti_net_rule_action action;
     bool matched = rooti_match_packet(skb, &ROOTI_FW_POLICY, &action);
 
-    switch (action) {
+    switch (action)
+    {
     case ROOTI_PACKET_DROP:
         return NF_DROP;
     case ROOTI_PACKET_ACCEPT:

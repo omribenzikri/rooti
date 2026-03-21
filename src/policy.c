@@ -46,7 +46,8 @@ static bool rooti_packet_matches_rule(struct sk_buff *skb, struct rooti_net_rule
     if (!rooti_matching_addresses(ip_header, rule)) return false;
     if (!rooti_matching_protocol(ip_header, rule)) return false;
 
-    switch(ip_header->protocol) {
+    switch(ip_header->protocol)
+    {
     case IPPROTO_TCP:
         tcp_header = tcp_hdr(skb);
         if (!rooti_matching_tcp_ports(tcp_header, rule)) {
@@ -76,7 +77,8 @@ bool rooti_match_packet(struct sk_buff *skb, const struct rooti_net_policy *poli
         }
     }
 
-    switch (policy->type) {
+    switch (policy->type)
+    {
     case ROOTI_NET_POLICY_WHITELIST:
         *action = ROOTI_PACKET_DROP;
          break;
