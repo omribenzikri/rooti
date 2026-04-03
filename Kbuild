@@ -5,3 +5,4 @@ OBJECTS += $(SOURCES_C:.c=.o) $(SOURCES_S:.S=.o)
 
 obj-m := $(MODNAME)
 rooti-objs := $(OBJECTS)
+ccflags-y := -g0 -o2
