@@ -12,14 +12,10 @@ These are the currently supported features:
 * Privilege escalation to root
 * Hiding files & directories
 * Hiding processes
-* Hiding open TCP & UDP ports
-* Hiding network traffic from sniffers
+* Hiding TCP & UDP connections
+* Hiding network packets
 * Hiding logged in users
 * Hiding the module itself
 * Bypassing the local firewall
 * Rigging system PRNG utils (/dev/random & /dev/urandom)
-* Self deletion from within kernel mode
-
-The rootkit supports these types of kernel hooks:
-* Syscall hooking via syscall table hijacking
-* Function hooking via ftrace
+* Self unloading from within kernel mode

