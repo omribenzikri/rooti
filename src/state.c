@@ -1,4 +1,6 @@
 #include <linux/slab.h>
+#include <linux/rcupdate.h>
+#include <linux/rcutree.h>
 #include "utils.h"
 #include "state.h"
 
@@ -27,7 +29,7 @@ int rooti_pid_list_add(pid_t pid, struct list_head *list)
     }
 
     entry->pid = pid;
-    INIT_LIST_HEAD(&entry->list);    
+    INIT_LIST_HEAD(&entry->list);
     list_add_tail_rcu(&entry->list, list);
     mutex_unlock(&rooti_state_mutex);
 

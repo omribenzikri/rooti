@@ -4,12 +4,12 @@
 
 unsigned long (*__kallsyms_lookup_name)(const char *name) = NULL;
 
-/* 
+/*
     Since kernel version 5.7.7 - kallsyms_lookup_name() is no longer exported to out-of-tree modules.
-    We can work around this by probing the kallsyms_lookup_name() function, which will find us its 
+    We can work around this by probing the kallsyms_lookup_name() function, which will find us its
     memory address.
 */
-int rooti_resolve_kln_addr()
+int rooti_resolve_kln_addr(void)
 {
     struct kprobe kp;
     int err;

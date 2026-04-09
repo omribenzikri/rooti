@@ -32,7 +32,7 @@ if (__##symbol == NULL) {                                               \
 /*
     Just like the macro above but specifically for function pointers. The function signature is
     typedef'ed as <symbol>_t and is constructed by: 'return_type' and the following variable number
-    of args which specify the argument types in order. 
+    of args which specify the argument types in order.
 */
 #define ROOTI_RESOLVE_FUNC_ADDR(symbol, error_value, return_type, ...)  \
 typedef return_type (*symbol##_t)(__VA_ARGS__);                         \

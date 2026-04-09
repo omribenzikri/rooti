@@ -11,7 +11,7 @@ static inline bool rooti_subnet_contains(subnet_addr_t *subnet_addr, unsigned lo
 
 static inline bool rooti_matching_addresses(struct iphdr *ip_header, struct rooti_net_rule *rule)
 {
-    return rooti_subnet_contains(&rule->saddr, ntohl(ip_header->saddr)) && 
+    return rooti_subnet_contains(&rule->saddr, ntohl(ip_header->saddr)) &&
            rooti_subnet_contains(&rule->daddr, ntohl(ip_header->daddr));
 }
 
@@ -68,7 +68,7 @@ bool rooti_match_packet(struct sk_buff *skb, const struct rooti_net_policy *poli
                         enum rooti_net_rule_action *action)
 {
     struct rooti_net_rule *rule;
-    
+
     for (int i = 0; i < policy->len; i++) {
         rule = &policy->rules[i];
         if (rooti_packet_matches_rule(skb, rule)) {

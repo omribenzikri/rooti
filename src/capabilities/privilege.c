@@ -2,7 +2,7 @@
 #include "privilege.h"
 #include "../utils.h"
 
-int rooti_elevate_privilege()
+int rooti_elevate_privilege(void)
 {
     struct cred *creds = prepare_creds();
     if (creds == NULL) {
