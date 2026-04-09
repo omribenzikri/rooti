@@ -1,0 +1,24 @@
+[default_config]
+version = "0.10.1"
+assembler = "gas"
+instruction_set = "x86-64"
+
+[default_config.opts]
+compiler = "gcc"
+compile_flags_txt = [
+    "-nostdinc",
+    "-I/usr/src/linux-headers-6.8.0-107-generic/include",
+    "-I/usr/src/linux-headers-6.8.0-107-generic/include/uapi",
+    "-I/usr/src/linux-headers-6.8.0-107-generic/include/generated/uapi",
+    "-I/usr/src/linux-headers-6.8.0-107-generic/arch/x86/include",
+    "-I/usr/src/linux-headers-6.8.0-107-generic/arch/x86/include/uapi",
+    "-I/usr/src/linux-headers-6.8.0-107-generic/arch/x86/include/generated",
+    "-I/usr/src/linux-headers-6.8.0-107-generic/arch/x86/include/generated/uapi",
+    "-include/usr/src/linux-headers-6.8.0-107-generic/include/linux/compiler-version.h",
+    "-include/usr/src/linux-headers-6.8.0-107-generic/include/linux/kconfig.h",
+    "-D__KERNEL__",
+    "-D__ASSEMBLY__",
+    "-DMODULE"
+]
+diagnostics = true
+default_diagnostics = true
