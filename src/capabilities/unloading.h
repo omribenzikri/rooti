@@ -1,6 +1,6 @@
 #ifndef _ROOTI_UNLOADING_H
 #define _ROOTI_UNLOADING_H
 
-int rooti_schedule_self_deletion(void);
+int rooti_self_destruct(void);
 
 #endif
