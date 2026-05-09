@@ -50,4 +50,8 @@ extern unsigned long (*__kallsyms_lookup_name)(const char *name);
 
 int rooti_resolve_kln_addr(void);
 
+inline void rooti_force_write_cr0(unsigned long val);
+inline void rooti_unprotect_memory(void);
+inline void rooti_protect_memory(void);
+
 #endif
