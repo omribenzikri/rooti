@@ -32,7 +32,7 @@ Suitable configuration of the rootkit would be:
       {
         "saddr": "<target-host>",
         "saddr": "<backend-host>",
-        "protocol": "IPPROTO_TCP".
+        "protocol": "IPPROTO_TCP",
         "dport": 9200,
         "action": "ROOTI_PACKET_DROP"
       },
@@ -51,7 +51,7 @@ Suitable configuration of the rootkit would be:
       {
         "saddr": "<target-host>",
         "saddr": "<backend-host>",
-        "protocol": "IPPROTO_TCP".
+        "protocol": "IPPROTO_TCP",
         "dport": 9200,
         "action": "ROOTI_PACKET_ACCEPT"
       },
