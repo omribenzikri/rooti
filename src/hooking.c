@@ -62,19 +62,24 @@ int rooti_install_func_hook(struct rooti_func_hook *hook)
     err = ftrace_set_filter_ip(&hook->ops, hook->addr, 0, 0);
     if (err) {
         ROOTI_DEBUG("ftrace_set_filter_ip() failed: %d", err);
-        return err;
+        goto error_set_filter;
     }
 
     err = register_ftrace_function(&hook->ops);
     if (err) {
         ROOTI_DEBUG("register_ftrace_function() failed: %d", err);
-        return err;
+        goto error_register;
     }
 
     INIT_LIST_HEAD(&hook->list);
     list_add_tail(&hook->list, &rooti_active_hooks);
 
     return 0;
+
+error_register:
+    ftrace_set_filter_ip(&hook->ops, hook->addr, 1, 0);
+error_set_filter:
+    return err;
 }
 
 void rooti_uninstall_func_hook(struct rooti_func_hook *hook)
@@ -84,12 +89,12 @@ void rooti_uninstall_func_hook(struct rooti_func_hook *hook)
     err = unregister_ftrace_function(&hook->ops);
     if (err) {
         ROOTI_DEBUG("unregister_ftrace_function() failed: %d", err);
-        return;
     }
 
     err = ftrace_set_filter_ip(&hook->ops, hook->addr, 1, 0);
-    if (err)
+    if (err) {
         ROOTI_DEBUG("ftrace_set_filter_ip() failed: %d", err);
+    }
 
     list_del(&hook->list);
 }

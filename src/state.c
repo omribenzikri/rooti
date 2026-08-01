@@ -11,21 +11,22 @@ LIST_HEAD(rooti_sticky_pids);
 int rooti_pid_list_add(pid_t pid, struct list_head *list)
 {
     struct rooti_pid_list_head *entry;
+    int ret = 0;
+
     mutex_lock(&rooti_state_mutex);
 
     // Nothing should be done if PID is already present
     list_for_each_entry(entry, list, list) {
         if (entry->pid == pid) {
-            mutex_unlock(&rooti_state_mutex);
-            return 0;
+            goto out;
         }
     }
 
     entry = kmalloc(sizeof(*entry), GFP_KERNEL);
     if (entry == NULL) {
-        mutex_unlock(&rooti_state_mutex);
         ROOTI_DEBUG("failed to allocate memory");
-        return -ENOMEM;
+        ret = -ENOMEM;
+        goto out;
     }
 
     entry->pid = pid;
@@ -33,7 +34,9 @@ int rooti_pid_list_add(pid_t pid, struct list_head *list)
     list_add_tail_rcu(&entry->list, list);
     mutex_unlock(&rooti_state_mutex);
 
-    return 0;
+out:
+    mutex_unlock(&rooti_state_mutex);
+    return ret;
 }
 
 void rooti_pid_list_del(pid_t pid, struct list_head *list)
@@ -44,9 +47,8 @@ void rooti_pid_list_del(pid_t pid, struct list_head *list)
     list_for_each_entry(entry, list, list) {
         if (entry->pid == pid) {
             list_del_rcu(&entry->list);
-            mutex_unlock(&rooti_state_mutex);
             kfree_rcu(entry, rcu);
-            return;
+            break;
         }
     }
     mutex_unlock(&rooti_state_mutex);

