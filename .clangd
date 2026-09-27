@@ -5,18 +5,20 @@ CompileFlags:
             "-std=gnu11",
             "-nostdinc",
 
-            "-I/usr/src/linux-headers-6.8.0-107-generic/include",
-            "-I/usr/src/linux-headers-6.8.0-107-generic/include/uapi",
-            "-I/usr/src/linux-headers-6.8.0-107-generic/include/generated",
-            "-I/usr/src/linux-headers-6.8.0-107-generic/include/generated/uapi",
-            "-I/usr/src/linux-headers-6.8.0-107-generic/arch/x86/include",
-            "-I/usr/src/linux-headers-6.8.0-107-generic/arch/x86/include/uapi",
-            "-I/usr/src/linux-headers-6.8.0-107-generic/arch/x86/include/generated",
-            "-I/usr/src/linux-headers-6.8.0-107-generic/arch/x86/include/generated/uapi",
+            # Symlink to /usr/src/linux-headers-<version>-generic
+            "-I/usr/src/linux-headers-generic/include",
+            "-I/usr/src/linux-headers-generic/include/uapi",
+            "-I/usr/src/linux-headers-generic/include/generated",
+            "-I/usr/src/linux-headers-generic/include/generated/uapi",
+            "-I/usr/src/linux-headers-generic/arch/x86/include",
+            "-I/usr/src/linux-headers-generic/arch/x86/include/uapi",
+            "-I/usr/src/linux-headers-generic/arch/x86/include/generated",
+            "-I/usr/src/linux-headers-generic/arch/x86/include/generated/uapi",
 
-            "-include /usr/src/linux-headers-6.8.0-107/include/linux/compiler-version.h",
-            "-include /usr/src/linux-headers-6.8.0-107/include/linux/compiler_types.h",
-            "-include /usr/src/linux-headers-6.8.0-107/include/linux/kconfig.h",
+            # Symlink to /usr/src/linux-headers-<version>
+            "-include /usr/src/linux-headers/include/linux/compiler-version.h",
+            "-include /usr/src/linux-headers/include/linux/compiler_types.h",
+            "-include /usr/src/linux-headers/include/linux/kconfig.h",
 
             "-Wall",
             "-Wundef",
