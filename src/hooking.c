@@ -47,7 +47,7 @@ int rooti_install_func_hook(struct rooti_func_hook *hook)
     // Hooking by address directly instead of looking up symbol
     // by name is possible by passing null as the symbol name
     if (hook->name != NULL) {
-        hook->addr = __kallsyms_lookup_name(hook->name);
+        hook->addr = rooti_sym_repo.kallsyms_lookup_name(hook->name);
         if (hook->addr == 0) {
             ROOTI_DEBUG("unresolved symbol: %s", hook->name);
             return -ENOENT;
