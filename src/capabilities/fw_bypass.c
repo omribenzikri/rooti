@@ -9,7 +9,7 @@ static unsigned int rooti_netfilter_hook(void *priv, struct sk_buff *skb,
                                          const struct nf_hook_state *state)
 {
     enum rooti_net_rule_action action;
-    bool matched = rooti_match_packet(skb, &ROOTI_FW_POLICY, &action);
+    bool matched = rooti_match_packet(skb, &rooti_config.firewall_policy, &action);
 
     switch (action)
     {

