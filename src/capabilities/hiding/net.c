@@ -1,10 +1,9 @@
+#ifdef ROOTI_CONFIG_PCAP_FILTER_METHOD_PROG
+
 #include <linux/socket.h>
 #include <linux/filter.h>
 #include "net.h"
 #include "../../utils.h"
-#include "../../config.h"
-
-#ifdef ROOTI_PCAP_FILTER_METHOD_PROG
 
 static void rooti_replace_ret_instructions(struct sock_fprog_kern *fprog, loff_t program_offset)
 {

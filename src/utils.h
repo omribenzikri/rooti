@@ -8,7 +8,6 @@
 #include <linux/bpf.h>
 #include <linux/module.h>
 #include <net/sock.h>
-#include "config.h"
 
 #ifdef ROOTI_DEBUG_LOGGING
 #define ROOTI_DEBUG(fmt, ...) printk(KERN_DEBUG "rooti: " fmt "\n", ##__VA_ARGS__)

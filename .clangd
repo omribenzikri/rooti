@@ -67,4 +67,8 @@ CompileFlags:
             "-DKBUILD_BASENAME=something",
             "-DKBUILD_MODNAME=rooti",
             "-D__KBUILD_MODNAME=kmod_rooti",
+
+            "-DROOTI_CONFIG_HIDE_CHILD_PROCS",
+            "-DROOTI_DEBUG_SHOW_ME",
+            "-DROOTI_DEBUG_LOGGING"
         ]

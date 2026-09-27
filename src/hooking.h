@@ -3,17 +3,12 @@
 
 #include <linux/ftrace.h>
 #include <linux/list.h>
-#include "config.h"
 
-#ifndef ROOTI_USE_FENTRY_OFFSET
-#pragma GCC optimize("-fno-optimize-sibling-calls")
-#endif
-
-#define ROOTI_FUNC_HOOK(_name, _hook, _orig) \
-{ \
-    .name = (_name), \
-    .func = (_hook), \
-    .orig = (_orig)  \
+#define ROOTI_FUNC_HOOK(_name, _hook, _orig)    \
+{                                               \
+    .name = (_name),                            \
+    .func = (_hook),                            \
+    .orig = (_orig)                             \
 }
 
 struct rooti_func_hook {
